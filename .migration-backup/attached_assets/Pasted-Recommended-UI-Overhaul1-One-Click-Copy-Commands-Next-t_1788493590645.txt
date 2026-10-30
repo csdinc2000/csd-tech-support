@@ -1,0 +1,21 @@
+Recommended UI Overhaul1. "One-Click Copy" Commands Next to Each TaskReplace text explanations (like "Run Cleanmgr > Clean up system files") with a direct PowerShell one-liner and a Copy button.Technician workflow: Click Copy in your portal $\rightarrow$ Paste into admin PowerShell on the bench computer $\rightarrow$ Hit Enter.2. Automated "Gate 1 & Gate 2 Intake" One-LinerIn the 7-Gate Diagnostic Checklist, add an "Auto-Fill from Client PC" button that provides a command to run on the bench machine.A single script queries serial number, CPU, RAM, disk health (S.M.A.R.T.), and pending Windows updates, then formats the output directly into JSON or clean text that pastes straight into the ticket notes.3. Categorized Action Buttons ("Quick Fix" Script Packages)Group common multi-step tasks into preset batched buttons:Tune-Up Pack: Runs disk cleanup, trims temp files, enables Storage Sense, and resets Windows search indexing.Malware/Debloat Pack: Lists third-party startup bloat and pulls running non-Microsoft processes.Intake Scan: Pulls specs, drive health, and current OS build.Replit Implementation PromptCopy and paste this prompt directly into your Replit prompt box to build this into your portal:PlaintextUpdate the "Tech Tools" and "7-Gate Diagnostic Checklist" sections in the portal to be actionable and technician-friendly:
+
+1. Cheatsheet Enhancements:
+- For every task under "Speed up Windows 10/11" (Disk Cleanup, Disable Search on HDD, Startup Apps, Storage Sense), convert the manual navigation steps into pre-built PowerShell one-liners.
+- Add a visible "Copy Command" button beside each task with visual feedback (e.g., "Copied!").
+
+2. Intake Diagnostic Generator (Bench Script):
+- Add a card at the top of Tech Tools titled "Bench Intake One-Liner".
+- Provide a single copyable PowerShell command that technicians can paste into an elevated prompt on a client PC.
+- The command should collect:
+    * Manufacturer, Model, and Serial Number / Service Tag (Win32_ComputerSystem & Win32_Bios)
+    * CPU, Total Physical RAM, and Disk Free Space / Drive Type (SSD vs HDD)
+    * Drive S.M.A.R.T. status (Get-PhysicalDisk | Select FriendlyName, MediaType, OperationalStatus, HealthStatus)
+    * OS Version and Build (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+- It should format the output cleanly so the technician can paste it directly into Gate 1 and Gate 2 checklist fields.
+
+3. Streamlined Clean-Up Script Launcher:
+- Provide a downloadable .ps1 script or raw script block viewer containing a modular cleanup function:
+    - Clears %TEMP%, C:\Windows\Temp, and runs automated DISM / SFC scans.
+    - Prompts technician before removing common OEM bloatware.
+- Keep the UI clean, matching the current dark/red accent theme of the platform.

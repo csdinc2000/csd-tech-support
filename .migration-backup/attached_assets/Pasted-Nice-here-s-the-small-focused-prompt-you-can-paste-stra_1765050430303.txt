@@ -1,0 +1,119 @@
+Nice 😄 — here’s the **small, focused prompt** you can paste straight into Replit’s AI while you’re editing your project files.
+
+---
+
+## 1) Tiny Prompt for Replit AI – Turn Existing App into a CRM
+
+Use this inside your main backend file (or when Replit AI is open in the repo):
+
+> You are updating this existing app into a mini-CRM for **Computer Systems Depot (CSD)**.
+>
+> **Goal:** Add simple CRM entities (Contacts, Leads, Jobs, Interactions) and REST APIs without breaking the current app.
+>
+> **Add data models:**
+>
+> * Contact: id, full_name, mobile_phone, email, contact_preference, address, tags, created_at, updated_at
+> * Lead: id, contact_id, source, campaign, service_type, device_type, brand_model, operating_system, problem_description, call_id, status, priority, assigned_to, created_at, updated_at
+> * Job: id, lead_id, job_number, job_type, status, scheduled_date_time, estimated_amount, final_amount, technician_notes, created_at, updated_at
+> * Interaction: id, contact_id, lead_id, job_id, type, summary, details, performed_by, created_at
+>
+> **Add API endpoints (match this file’s current style/framework):**
+>
+> * Contacts:
+>
+>   * GET /api/contacts (list + search by name/phone/email)
+>   * GET /api/contacts/:id
+>   * POST /api/contacts
+>   * PUT /api/contacts/:id
+> * Leads:
+>
+>   * GET /api/leads (filters: status, source, date range, service_type, search)
+>   * GET /api/leads/:id
+>   * POST /api/leads
+>   * PUT /api/leads/:id
+> * Jobs:
+>
+>   * GET /api/jobs
+>   * GET /api/jobs/:id
+>   * POST /api/jobs
+>   * PUT /api/jobs/:id
+> * Interactions:
+>
+>   * GET /api/interactions (filter by contact_id/lead_id/job_id)
+>   * POST /api/interactions
+>
+> **Intake form integration:**
+>
+> * Ensure there is a POST /api/intake endpoint that:
+>
+>   1. Finds or creates a Contact by phone/email
+>   2. Creates a Lead using the request body
+>   3. Saves source, campaign, call_id from URL/query params if present
+>   4. Creates an Interaction of type "intake_form"
+>   5. Returns the created lead + contact as JSON
+>
+> **Other requirements:**
+>
+> * Use the existing DB/ORM style already in this project.
+> * Add basic server-side validation and error handling.
+> * Keep code well-commented so a non-developer can understand what each part does.
+> * Do not remove any existing routes; only extend the app.
+>
+> Please generate/modify the code in this file to implement these CRM features, step by step, explaining briefly what you changed at the bottom in comments.
+
+---
+
+## 2) Tiny Prompt for Frontend / Admin UI (Dashboard)
+
+Use this when you’re in the main frontend file/template:
+
+> Upgrade this app with a simple CRM **Admin Dashboard** UI for Computer Systems Depot that talks to the backend endpoints `/api/contacts`, `/api/leads`, `/api/jobs`, and `/api/interactions`.
+>
+> Build pages/components for:
+>
+> 1. **Dashboard**:
+>
+>    * Show counts: new leads today, leads by status, open jobs, completed jobs.
+> 2. **Leads List**:
+>
+>    * Table or cards with filters (status, source, date range).
+>    * Click a lead to open a Lead Detail view.
+> 3. **Lead Detail**:
+>
+>    * Show contact info, lead info, status dropdown, and related jobs.
+>    * Show interactions timeline and a form to add a new note/interaction.
+> 4. **Jobs List**:
+>
+>    * Table with job_number, customer name, service_type, status, scheduled_date_time.
+>
+> Requirements:
+>
+> * Use the existing frontend stack and style that this project already uses.
+> * Create reusable API helper functions for GET/POST/PUT.
+> * Make the layout responsive and simple (works on phone and desktop).
+> * Keep components clearly named and commented.
+>
+> Implement the UI pieces and wire them up to the existing/new API endpoints.
+
+---
+
+## 3) Tiny Prompt for the WordPress Embed (Intake Form Only)
+
+Use this when generating the shortcode/plugin code:
+
+> Generate a minimal WordPress plugin called **CSD CRM Intake** that registers a shortcode `[csd_intake_form]`.
+>
+> The shortcode should output an iframe that loads my Replit intake form route (placeholder URL: `https://e3727a71-47fc-4629-b632-0fb310054293-00-2u0vu1ytoncxf.janeway.replit.dev/intake`) with 100% width and a reasonable height.
+>
+> The plugin should:
+>
+> * Have a main PHP file with the plugin header.
+> * Register the `[csd_intake_form]` shortcode.
+> * Optionally include a settings page where I can set the Replit base URL, stored in `get_option`.
+> * Be written as files that I can zip and upload to WordPress.
+>
+> Output the full PHP plugin code, with clear file names and comments.
+
+---
+
+If you want, next I can help you write **exact test steps** (like: “submit a form, then go to this URL and you should see the lead here”) so you can confirm the CRM is really working.

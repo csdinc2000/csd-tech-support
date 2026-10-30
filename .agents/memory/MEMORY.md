@@ -1,0 +1,47 @@
+- [Customer identity model](customer-identity-model.md) — clients are company accounts; CRM contacts are people linked to an account, and operational records resolve through that relationship.
+- [Intake CRM conversion](intake-crm-conversion.md) — each intake atomically becomes a contact association, lead, and lead-stage deal; ambiguous identities require review.
+- [PTT RoIP bridge](ptt-roip-bridge.md) — the physical radio boundary uses a single-instance Twilio SIP/PCMU bridge mapped to the Dispatch talk group.
+- [Twilio webhook verification](twilio-webhook-verification.md) — every Twilio callback must share one production-strict verifier; local bypasses must never apply in production.
+- [PTT telemetry privacy](ptt-telemetry-privacy.md) — historical relay health stores only sanitized outcomes; never retain credentials or user, peer, IP, or endpoint identifiers.
+- [Client history identity safety](client-history-identity-safety.md) — communication fallback matching requires a globally unique canonical identity; raw Twilio content remains admin-only.
+- [Twilio inbound messaging routing](twilio-inbound-messaging-routing.md) — the CSD A2P Messaging Service must defer inbound handling to each sender number’s webhook.
+- [Dashboard data integrity](dashboard-data-integrity.md) — operational device counts include only provider-connected endpoints; never present seeded rows or availability as uptime.
+- [Staff platform access](staff-platform-access.md) — app capabilities belong to Clerk-backed auth users; legacy users remain ticket-assignee identities.
+- [A2P alert lifecycle](a2p-alert-lifecycle.md) — approved status must reconcile database alerts after restarts; repeated failures update one active incident.
+- [Bulk SMS consent](bulk-sms-consent.md) — bulk sends recheck consent server-side; service consent never authorizes marketing, and STOP overrides both.
+- [Service contract signing](service-contract-signing.md) — incomplete agreements stay draft; signing uses expiring bearer links and immutable consent/document audit data.
+- [MeshCentral control authentication](meshcentral-control-authentication.md) — control WebSockets require the configured server origin plus MeshCentral’s native authentication header.
+- [Staff record assignment scope](staff-record-assignment-scope.md) — non-admin staff fail closed to explicit customer/job assignments; related records inherit only through validated links.
+- [Database migration boundary](database-migration-boundary.md) — never run whole-schema Drizzle push automatically while explicit API-managed tables remain outside the central schema.
+- [Publish-safe database expressions](publish-safe-database-indexes.md) — inspect generated SQL; function-index arguments and quoted semicolons in CHECKs can be truncated during Publish diff serialization.
+- [Stripe-native CRM invoices](stripe-native-crm-invoices.md) — issued CRM invoices use Stripe-hosted invoice pages/PDFs while the branded CSD page remains the customer entry point.
+- [External invoice settlement ambiguity](external-invoice-settlement.md) — a paid Stripe invoice alone does not prove an out-of-band payment; keep uncertain external confirmations pending.
+- [Stripe sandbox verification](stripe-sandbox-verification.md) — paid status is canonical; managed webhook secrets may live in Stripe sync tables rather than connector settings.
+- [Stripe reconciliation incidents](stripe-reconciliation-incidents.md) — payment webhook failures use one per-invoice audit incident with sanitized event/error metadata, never raw payloads.
+- [Stripe document incident ordering](stripe-document-incident-ordering.md) — invoice document warnings follow verified outcome time, not database write arrival order.
+- [PayPal CSV transaction imports](paypal-csv-imports.md) — import only mapped ledger fields, preview first, and deduplicate by PayPal ID or a stable transaction fingerprint.
+- [SendGrid provider health](sendgrid-delivery-errors.md) — inspect nested errors; capacity failures share one sanitized alert that resolves after a successful provider send.
+- [Company email SMTP](company-email-smtp.md) — user chose HostGator SMTP; use its direct mail server, not a Cloudflare-proxied hostname, and verify without sending first.
+- [Internal alert visibility](internal-alert-visibility.md) — internal staff incidents require explicit administrator authorization, independent of customer assignment scope.
+- [Clerk route test boundaries](clerk-route-test-boundaries.md) — focused route tests should inject the auth gate; a synthetic req.auth function is not a complete Clerk session.
+- [Clerk invite end-to-end checks](clerk-invite-e2e.md) — use development test-email OTPs and testing tokens; isolate validation and clean up temporary identities.
+- [Contact phone validation](contact-phone-validation.md) — validate raw phone input before normalization on every contact-producing path; never let character stripping conceal malformed input.
+- [Best-effort Slack notifications](best-effort-slack-notifications.md) — queue CRM Slack alerts durably before response; never log payloads or raw connector errors.
+- [Date-range API boundaries](openapi-calendar-dates.md) — send explicit UTC instants for user-local calendar ranges; never rely on database session-timezone date casts.
+- [Shared staff calendar visibility](staff-calendar-visibility.md) — use the shared booking calendar; technicians see assigned customer appointments only, while schedulers manage the full calendar.
+- [Staff deletion boundary](staff-deletion-boundary.md) — owner-confirmed staff removal must reject owner identities and conflicting sign-ins; Clerk and database deletion cannot share one transaction.
+- [Unsaved draft history guards](unsaved-draft-history-guards.md) — register Back-navigation protection before route listeners can unmount a dirty form.
+- [Managed preview port collisions](managed-preview-port-collisions.md) — a failed web workflow may coexist with an older Vite listener that still serves the preview.
+- [First-party catalog offers](first-party-catalog-offers.md) — CSD offers coexist with peer listings; customers can inquire for an invoice or pay through Stripe Checkout.
+- [Managed Stripe webhook subscriptions](managed-stripe-webhook-subscriptions.md) — Stripe Sync does not update event subscriptions on existing enabled webhook endpoints.
+- [Published feedback widget](published-feedback-widget.md) — Replit's Share Your Feedback control is a Publishing setting, not an app component or Vite banner.
+- [Dependency audit overrides](dependency-audit-overrides.md) — use narrow, major-aware transitive pins when compatible parent ranges resolve to vulnerable cached versions.
+- [Query-only navigation](query-only-navigation.md) — test staff handoffs through the containing view; pathname-only observers and redirects can lose tab or assignee selections.
+- [Service-request email outcomes](service-request-email-outcomes.md) — uncertain submission is not proof of failure; never automatically resend or equate acceptance with customer delivery.
+- [Generator compatibility boundary](generator-compatibility-boundary.md) — isolate upgrade checks from baseline API debt; use disposable fixtures and real installed runtimes.
+- [Aria communication permissions](aria-communication-permissions.md) — company-wide CRM context does not authorize automatic email, SMS, or call actions.
+- [Business-line call answering](business-line-call-answering.md) — required greeting, ordered backups, and off-duty-inclusive technician text alerts.
+- [Listener lifecycle policy](listener-lifecycle-policy.md) — clean up inactive feature listeners without disabling necessary phone-call handling.
+- [Email webhook event ordering](email-webhook-event-ordering.md) — order provider delivery updates by provider-event time, separate from app send-attempt timestamps.
+- [Staff profile email changes](staff-profile-email-changes.md) — verified same-account addresses only; protect owner identities and keep contact phones separate from call routing.
+- [Browser-suite budgets](browser-suite-budgets.md) — use bounded background runs for a complete suite; the shell deadline is not Playwright's test timeout.

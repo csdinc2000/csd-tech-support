@@ -1,0 +1,180 @@
+DNS management for computersystemsdepot.com
+Review, add, and edit DNS records. Changes propagate globally within minutes.
+DNS Setup: Full
+
+
+Import and Export
+
+
+Dashboard Display Settings
+Search DNS Records
+Your search yielded 15 results
+
+Type
+
+Name
+
+Content
+
+Proxy status
+
+
+
+TTL
+
+Actions
+
+A
+computersystemsdepot.com
+50.6.225.251
+
+Proxied
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+
+
+A
+cpanel
+50.6.225.251
+
+DNS only
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+
+
+A
+ftp
+50.6.225.251
+
+DNS only
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+A
+localhost
+127.0.0.1
+DNS only - local IP
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+A
+support
+34.111.179.208
+
+Proxied
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+
+
+A
+webdisk
+50.6.225.251
+
+DNS only
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+
+
+A
+webmail
+50.6.225.251
+
+DNS only
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+
+
+A
+whm
+50.6.225.251
+
+DNS only
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+
+
+CNAME
+mail
+computersystemsdepot.com
+
+DNS only
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+CNAME
+www
+computersystemsdepot.com
+
+Proxied
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+
+
+MX
+computersystemsdepot.com
+computersystemsdepot.com
+0
+DNS only
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+
+
+TXT
+computersystemsdepot.com
+google-site-verification=NXVBF8KvA0-FA0ebidPWWYchXdf7_pZUblz8g9hyM9A
+DNS only
+
+1 hr
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+
+
+TXT
+computersystemsdepot.com
+v=spf1 +a +mx +ip4:192.185.148.13 ?all
+DNS only
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+
+
+TXT
+default._domainkey
+k=rsa; p=MHwwDQYJKoZIhvcNAQEBBQADawAwaAJhAMqROyTo0M4hx7dpEyZ2OarfCXW32BqNrtN5BR4lKttc0dC2E6FJRS94cZfvYLfgtx7jg+XbIhf/oXrJn9TAcKZlV9e3TX497o/medemN1MgRzGscEtzhyRjH4gHte2MFwIDAQAB;
+DNS only
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+
+TXT
+support
+"replit-verify=e3727a71-47fc-4629-b632-0fb310054293"
+DNS only
+
+Auto
+EditWhen toggled open, an additional table row will be added below this row to enable editing DNS records.
+Cloudflare Nameservers
+Every DNS zone on Cloudflare is assigned a set of Cloudflare-branded nameservers.
+Type	Value
+NS	dana.ns.cloudflare.com
+NS	phil.ns.cloudflare.com

@@ -1,0 +1,12 @@
+{"$$indexCreated":{"fieldName":"type","unique":false,"sparse":false}}
+{"$$indexCreated":{"fieldName":"domain","unique":false,"sparse":false}}
+{"$$indexCreated":{"fieldName":"meshid","unique":false,"sparse":true}}
+{"$$indexCreated":{"fieldName":"nodeid","unique":false,"sparse":true}}
+{"$$indexCreated":{"fieldName":"email","unique":false,"sparse":true}}
+{"$$indexCreated":{"fieldName":"type"}}
+{"$$indexCreated":{"fieldName":"domain"}}
+{"$$indexCreated":{"fieldName":"meshid","sparse":true}}
+{"$$indexCreated":{"fieldName":"nodeid","sparse":true}}
+{"$$indexCreated":{"fieldName":"email","sparse":true}}
+{"_id":"DatabaseIdentifier","value":"b47285de90932cc33a1e3ac888074c894ad4c49c3d171db3f7fc8b0aa3ebf0b462e42cc614e5f07b3a253bb9e7c3351f"}
+{"_id":"SchemaVersion","value":2}

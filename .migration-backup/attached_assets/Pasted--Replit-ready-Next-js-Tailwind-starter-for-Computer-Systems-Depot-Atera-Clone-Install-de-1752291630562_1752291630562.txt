@@ -1,0 +1,70 @@
+// Replit-ready Next.js + Tailwind starter for Computer Systems Depot (Atera Clone)
+
+// Install dependencies:
+// npm install next react react-dom tailwindcss postcss autoprefixer
+
+// Run dev server:
+// npm run dev
+
+// tailwind.config.js
+module.exports = {
+  content: ['./pages/**/*.{js,ts,jsx,tsx}', './components/**/*.{js,ts,jsx,tsx}'],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+};
+
+// styles/globals.css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Branding overrides for Computer Systems Depot */
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background-color: #f9fafb;
+}
+
+// pages/_app.tsx
+import '../styles/globals.css';
+import type { AppProps } from 'next/app';
+
+export default function App({ Component, pageProps }: AppProps) {
+  return <Component {...pageProps} />;
+}
+
+// pages/index.tsx
+import Head from 'next/head';
+import Link from 'next/link';
+
+export default function Home() {
+  return (
+    <div className="min-h-screen bg-white text-gray-900">
+      <Head>
+        <title>Computer Systems Depot - Remote IT Support & Monitoring</title>
+      </Head>
+      <header className="bg-blue-900 text-white p-4 shadow-md">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <h1 className="text-xl font-bold">Computer Systems Depot</h1>
+          <nav className="space-x-4">
+            <Link href="/services">Services</Link>
+            <Link href="/support">Support</Link>
+            <Link href="/login">Client Login</Link>
+          </nav>
+        </div>
+      </header>
+      <main className="max-w-5xl mx-auto p-6">
+        <h2 className="text-3xl font-bold mb-4">Complete IT Monitoring & Helpdesk for Your Business</h2>
+        <p className="mb-6">Secure, local, and expert-managed IT solutions tailored for South Florida professionals and home users.</p>
+        <div className="space-x-4">
+          <Link href="/support" className="bg-blue-600 text-white px-6 py-2 rounded-xl">Start Remote Support</Link>
+          <Link href="/services" className="bg-gray-200 px-6 py-2 rounded-xl">View Services</Link>
+        </div>
+      </main>
+      <footer className="bg-gray-100 text-center p-4 mt-10 text-sm">
+        © 2025 Computer Systems Depot Inc. | Powered by React + Tailwind
+      </footer>
+    </div>
+  );
+}

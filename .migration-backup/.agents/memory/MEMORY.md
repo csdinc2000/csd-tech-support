@@ -1,0 +1,15 @@
+- [API auth gate (default-deny)](api-auth-gate.md) — global /api gate; public via allowlist; admin = email allowlist (ADMIN_EMAILS), fails CLOSED when unset (no DB role column).
+- [SSRF guard for user-host endpoints](ssrf-network-endpoints.md) — any server route that connects to a user-supplied host/port must resolve once, reject non-public IPs, and connect by the validated IP.
+- [Bundled CLI entrypoint guard](bundled-cli-entrypoint-guard.md) — `import.meta.url === file://${argv[1]}` is true for every module in an esbuild bundle; gate direct-run with `argv[1]?.endsWith("<file>.ts")` instead.
+- [Aria AI provider health](aria-ai-providers.md) — pinned model ids go stale (Anthropic deprecates dated ids ~yearly); public chatbot must fall back across providers since OpenAI key/Gemini quota can each fail independently.
+- [MeshCentral login protocol](meshcentral-integration.md) — login success is HTTP 200 + refreshed xid cookie (not a 3xx); failure is `messageid>=100` (112 bad creds); 5xx/connection error = server down, not bad creds.
+- [MeshCentral integration realities](meshcentral-integration.md) — no REST API; auth = web form login, device data only via WS /control.ashx; default cert self-signed.
+- [db:push is broken in this repl](drizzle-db-push-broken.md) — `npm run db:push` errors; avoid schema migrations or flag user first, prefer app-level fixes over DB constraints.
+- [External "master prompt" audits](external-audit-prompts.md) — this is an RMM/CRM repair-shop app, not trading; ignore trading/"Donald d Williams"/other-site copy in pasted prompts, keep only web-app reliability/security items.
+- [Twilio recording & SMS quirks](twilio-quirks.md) — "absent" recordings 404 their media (not a server error), SMS "default" sentinel triggers 21612, undelivered 30005 = A2P 10DLC account issue.
+- [Twilio voice & greeting-audio storage](twilio-quirks.md) — Polly `-Neural` voices fix robotic `<Say>`; custom greeting audio lives in Replit KV + a public `/webhooks/voice/greeting-audio` for `<Play>` (no DB column).
+- [After publishing, Twilio webhooks point at dev](twilio-quirks.md) — published app's inbound calls hang up if the number's VoiceUrl still targets the `*.janeway.replit.dev` preview; repoint to the prod domain.
+- [PTT and RoIP architecture](ptt-roip-architecture.md) — browser PTT is vendor-neutral WebRTC with floor control; a physical gateway needs a selected protocol and adapter.
+- [Staff dispatch security](staff-dispatch-security.md) — commands require verified Twilio webhooks plus an on-duty roster match; STOP overrides prior SMS consent.
+- [Client tests via Node runner](client-tests-node-runner.md) — no jsdom/RTL; test client logic by extracting UI-free modules and importing them into server/__tests__/*.test.ts.
+- [Invoice payment providers](invoice-payment-providers.md) — Stripe is verified automatically; PayPal is an owner-supplied external link whose payment requires manual confirmation.

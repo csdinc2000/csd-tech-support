@@ -1,0 +1,23 @@
+{
+  "name": "@workspace/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test ./test/post-merge.test.mjs ./test/generator-compatibility.test.mjs",
+    "test:post-merge": "node --experimental-strip-types --test ./test/post-merge.test.mjs ./test/api-readiness.test.mjs",
+    "test:generator-compatibility": "node --test ./test/generator-compatibility.test.mjs",
+    "hello": "tsx ./src/hello.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "backfill-intake": "tsx ./src/backfill-intake-records.ts"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "@types/ws": "^8.18.1"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "ws": "^8.21.3"
+  }
+}

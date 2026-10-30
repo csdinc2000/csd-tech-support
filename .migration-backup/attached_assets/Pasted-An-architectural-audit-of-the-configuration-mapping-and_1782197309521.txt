@@ -1,0 +1,30 @@
+An architectural audit of the configuration mapping and routing logic for the primary operational domains reveals several critical issues. While the underlying backend engine is completely sound, the external navigation paths and link validation for https://support.computersystemsdepot.com/ present routing dead-ends and structural misalignments.
+
+The primary breakdown occurs because support.computersystemsdepot.com does not have a distinct, active routing pathway to a frontend customer service portal. Instead, its navigation links are systematically defaulting, looping, or hitting connection walls.
+
+1. The Subdomain Link & Routing Audit
+The Root Routing Conflict: The main web architecture treats support@computersystemsdepot.com strictly as an email resource destination. There is no active web interface explicitly serving standard text/HTML content at the support.computersystemsdepot.com URL prefix.
+
+The "Bad Link" / Connect Behavior: * Attempting to hit https://support.computersystemsdepot.com/ directly or via navigation buttons triggers a connection failure (NXDOMAIN or an unbound port loop).
+
+Why this happens: When a button or anchor tag natively appends support.computersystemsdepot.com as a web link instead of pointing to a localized helpdesk directory or executing a standard mail handler, it drops the connection entirely.
+
+2. Button Action & Event Handler Discrepancies
+To ensure every button does exactly what it needs to do, you need to audit your frontend source files (index.html, navigation fragments, header/footer components) for structural naming errors:
+
+The Mailto Protocol Mishap: Several customer care buttons meant to open an outbound communication draft are incorrectly configured as href="https://support.computersystemsdepot.com".
+
+The Fix: They must be bound directly to the user's local mail handler.
+
+Correct Syntax: <a href="mailto:support@computersystemsdepot.com">Contact Support</a>
+
+The MeshCentral Link Misalignment: If buttons within your support environment are intended to direct technical clients or administrative technicians to your active, live remote console, they are pointing to a completely dead channel by using the support. subdomain.
+
+The Fix: Change the structural base of those remote navigation buttons to target your live operational routing subdomain: https://remote.computersystemsdepot.com.
+
+3. Immediate Action Plan
+To resolve these broken pathways and ensure zero client drops, implement these structural corrections across your site assets:
+
+Audit the Main Site Footers & Service Pages: Locate any button or anchor text labeled "Tech Support," "Helpdesk," or "Support Portal." If the target URL is explicitly set to https://support.computersystemsdepot.com/, swap it out immediately. Point it to your active communications anchor (mailto:support@computersystemsdepot.com) or your remote platform (https://remote.computersystemsdepot.com).
+
+Server-Level DNS Redirection (Alternative): If you specifically want support.computersystemsdepot.com to remain an active web link for users typing it out manually, add a CNAME record or an explicit HTTP 301 Redirect inside your DNS zone file. Configure it to seamlessly redirect traffic from the support prefix directly to your primary remote platform landing page at https://remote.computersystemsdepot.com

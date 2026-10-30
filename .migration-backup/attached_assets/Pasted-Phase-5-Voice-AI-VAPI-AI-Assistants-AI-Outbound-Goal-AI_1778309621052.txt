@@ -1,0 +1,112 @@
+Phase 5 — Voice AI (VAPI), AI Assistants, AI Outbound
+Goal: AI voice agents that can handle inbound calls, qualify leads, schedule callbacks, and run outbound campaigns. This is the most expensive phase to run (per-minute AI inference costs); plan budget accordingly.
+Prompt to paste into Replit Agent
+Extend the existing CSD Call Manager app. Integrate VAPI (https://vapi.ai) for AI voice agents. This phase touches voice flow, so test thoroughly in a staging menu before exposing to real callers.
+
+PRE-REQUISITE: Sign up for a VAPI account and provision API key. Add VAPI_API_KEY and VAPI_PRIVATE_KEY to env vars. VAPI must be linked to the same Twilio account so it can use the CSD number.
+
+NEW DATABASE TABLES:
+
+Table: ai_assistants
+  - id (uuid)
+  - vapi_assistant_id (text, unique)  — mirrored from VAPI
+  - name (text)
+  - purpose (enum: 'inbound_receptionist','outbound_qualifier','callback_scheduler','custom')
+  - system_prompt (text)
+  - first_message (text)
+  - voice_id (text)  — VAPI voice
+  - model (text, default 'gpt-4o-mini')
+  - tools_enabled (text[])  — e.g. ['lookup_ticket','schedule_callback','transfer_to_human']
+  - is_active (boolean, default false)
+  - created_at (timestamptz)
+
+Table: ai_call_sessions
+  - id (uuid)
+  - call_id (uuid, FK calls.id)
+  - assistant_id (uuid, FK ai_assistants.id)
+  - vapi_call_id (text)
+  - transcript (jsonb)  — turn-by-turn
+  - summary (text, nullable)
+  - extracted_data (jsonb, nullable)  — e.g. { customer_name, issue_type, callback_time }
+  - outcome (enum: 'transferred','scheduled_callback','completed','abandoned','escalated')
+  - cost_cents (integer, nullable)
+  - created_at (timestamptz)
+
+Table: outbound_campaigns
+  - id (uuid)
+  - name (text)
+  - assistant_id (uuid)
+  - status (enum: 'draft','running','paused','completed')
+  - target_list (jsonb)  — array of { phone_number, customer_name, custom_fields }
+  - call_window_start (time)  — local time
+  - call_window_end (time)
+  - max_calls_per_hour (integer)
+  - dnc_check_enabled (boolean, default true)  — REQUIRED: do not allow disabling for compliance
+  - created_at (timestamptz)
+
+Table: campaign_calls
+  - id (uuid)
+  - campaign_id (uuid)
+  - phone_number (text)
+  - call_id (uuid, FK calls.id, nullable)
+  - status (enum: 'pending','dialing','completed','failed','dnc_blocked')
+  - attempt_number (integer, default 1)
+  - scheduled_at (timestamptz)
+
+INTEGRATION:
+- Sync ai_assistants with VAPI: when created/edited locally, call VAPI API to create/update the corresponding assistant; store vapi_assistant_id.
+- Inbound flow: in IVR, allow an option to route to an AI assistant (new ivr_options.action value: 'ai_assistant', target = assistant_id). When chosen, instruct Twilio to bridge the call to the VAPI SIP/WebRTC endpoint for that assistant.
+- VAPI webhook: receive call-end event with transcript + summary, store in ai_call_sessions, create/update calls row, run any extraction (e.g. detected customer name → fill calls.customer_name).
+- Outbound campaigns: scheduled worker dials numbers from target_list within the campaign's call window, respecting max_calls_per_hour and DNC. Each call is bridged to the assigned AI assistant via VAPI.
+
+REQUIRED TOOLS for assistants (built-in, exposed to VAPI as function-calling tools):
+- lookup_ticket(ticket_number) → returns ticket info from a stub (Phase 5 doesn't need real RMM integration; return mock data and log the request)
+- schedule_callback({phone, preferred_time, notes}) → creates a row in callbacks table
+- transfer_to_human(target='owner'|'tech_queue') → returns instruction for VAPI to warm-transfer
+- check_business_hours() → boolean
+
+NEW FRONTEND PAGES:
+- /admin/ai/assistants  — list/edit assistants, system prompt editor, voice picker, test-call button (calls your phone with the assistant)
+- /admin/ai/campaigns   — create/manage outbound campaigns, upload CSV target lists, view per-call status
+- /ai/sessions          — browse AI call transcripts and summaries, search by extracted data
+
+COMPLIANCE & SAFETY (non-negotiable):
+- Every AI-handled call must include a disclosure at the start: "You're speaking with an automated assistant. This call is being recorded."
+- Outbound AI campaigns must run DNC check on every number before dialing. No override.
+- Outbound calls only between 8am and 9pm in the called number's local time zone (TCPA).
+- Provide a clear "speak to a human" path in every assistant prompt; transfer_to_human must be available on every assistant.
+- Hard rate limit: max 1 outbound AI campaign call per number per 7 days unless explicitly approved by owner per-row.
+- Cost cap: configurable per-day spend cap on AI calls; when hit, pause campaigns and email owner.
+
+DELIVERABLES:
+1. Migrations
+2. README section on VAPI setup, voice selection, and cost expectations (typical $0.05–$0.15/minute combined LLM + voice)
+3. One sample assistant seeded: "CSD Receptionist" — answers basic questions, qualifies issue type, offers to schedule callback or transfer.
+4. Test runbook: configure VAPI key, test-call the receptionist, run a 1-number outbound campaign in staging.
+
+DO NOT:
+- Allow disabling DNC checks on outbound campaigns
+- Allow outbound calls outside legal hours
+- Skip the AI/recording disclosure
+- Break any prior phase
+Phase 5 Acceptance Checklist
+
+ Phases 1–4 still work.
+ An assistant can be created in /admin/ai/assistants and a test call to your phone uses it.
+ Inbound IVR option routed to AI assistant works end-to-end; transcript appears in /ai/sessions.
+ AI assistant can transfer to owner mid-call.
+ Outbound campaign of 1 test number completes; transcript and outcome stored.
+ Adding a campaign target on the DNC list correctly skips it (status: 'dnc_blocked').
+ Daily spend cap pauses campaigns when reached and emails owner.
+
+
+Cross-phase rules to repeat to Replit Agent if drift happens
+
+Never modify webhook URLs after they're live in Twilio. Add new webhooks; don't rename existing ones.
+Never disable Twilio signature verification. Even briefly.
+Never disable Florida call recording disclosure. Even briefly.
+Never hardcode credentials. Every secret is an env var.
+Never break a prior phase. If a refactor is needed, scope it explicitly and provide a migration; don't silently change behavior.
+Always provide migrations when adding/changing tables; never destructive changes without a backup step.
+Always update the README with new setup steps when a phase adds env vars or webhook URLs.
+

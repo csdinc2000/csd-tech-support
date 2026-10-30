@@ -1,0 +1,78 @@
+Publish your app
+Domain
+Available
+csd-tech-support
+.replit.app
+Who can access your app
+
+Public
+Anyone on the internet with the URL
+Database settings
+Production database
+Manage production database creation and how it's populated when publishing. Learn more
+An existing production database from a previous published app was found. Delete the existing database via the settings tab in the Database pane and create a new one.
+
+Create production database
+Monitoring tools
+Enable app monitoring
+Be the first to know when your app is down. We'll continuously check if your app is online and notify you via email if things go wrong.
+
+Stripe connection
+Connect your live Stripe account
+Read Docs
+
+1
+Claim your sandbox in Stripe
+Claim sandbox
+2
+Find your live keys
+3
+Copy and paste live keys from Stripe
+Engagement tools
+Enable feedback widget
+Add a feedback widget to the corner of your published app. Review submissions in your inbox and send to Agent for fixes.
+
+"Made with Replit" badge
+Display a "Made with Replit" referral badge on your published app, when someone signs up using your referral link, you earn credits. Learn more.
+
+
+Publish
+Adjust settings
+Manually configure machine settings, secrets, ports, and more.
+
+Deployment type
+Technology used to publish your app. Learn more
+
+Reserved VM
+
+Reserved VM
+Ensures high uptime, minimizing disruptions for apps requiring persistent session data.
+Machine configuration
+The power of the servers running your app
+
+0.5 vCPU / 2 GiB RAM
+
+0.5 vCPU / 2 GiB RAM
+$20
+per month
+($0.028/hour)
+Deployment secrets
+Private keys your apps use to access APIs and services. Manage your development secrets
+Port configuration
+Configure which port your app uses for incoming requests
+App type
+Configure your app based on whether it needs to serve traffic from the web.
+
+
+Web Server
+
+Background Worker
+Deployment geography
+Choose where your app is hosted. Selecting a region closer to your users reduces latency and can improve performance. Once you publish, your app and its resources (such as the production database and Object Storage) are locked to this region — to change regions later you will need to remix this app. Learn more
+
+North America
+Closest
+
+North America
+Block publishing of critical vulnerabilities
+We always run a security scan before publishing. This setting controls whether publishing is blocked when critical vulnerabilities are found. Some high-risk issues may still block publishing. Learn more

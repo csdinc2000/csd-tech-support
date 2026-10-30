@@ -1,0 +1,4 @@
+{"$$indexCreated":{"fieldName":"time","unique":false,"sparse":false}}
+{"$$indexCreated":{"fieldName":"expire","unique":false,"sparse":false}}
+{"$$indexCreated":{"fieldName":"time","expireAfterSeconds":2592000}}
+{"$$indexCreated":{"fieldName":"expire","expireAfterSeconds":0}}

@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "./staff-lifecycle.fixture.tsx",
+    "./staff-lifecycle.spec.ts",
+    "./lifecycle-hardware.ts"
+  ],
+  "references": [{ "path": "../../../lib/api-client-react" }]
+}

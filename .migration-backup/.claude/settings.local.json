@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx playwright test:*)",
+      "Bash(npm run dev:*)",
+      "Bash(lsof:*)",
+      "Bash(pkill:*)",
+      "Bash(PORT=5001 npm run dev)",
+      "Bash(curl:*)",
+      "Bash(TEST_BASE_URL=http://localhost:5001 node tests/simplified-validation.js)",
+      "Bash(TEST_BASE_URL=http://localhost:5001 node tests/node-api.test.js)",
+      "Bash(TEST_BASE_URL=http://localhost:5001 node tests/component-integration.test.js)",
+      "Bash(TEST_BASE_URL=http://localhost:5001 node tests/final-system-validation.js)",
+      "Bash(npm run check:*)",
+      "Bash(npm run db:push:*)",
+      "Bash(npx tsc *)",
+      "Bash(node --input-type=module --eval ' *)",
+      "Bash(npx tsx *)",
+      "Bash(git stash *)",
+      "Bash(timeout 25 npx vite build --logLevel warn)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=6144\" npx tsc --noEmit)",
+      "Bash(awk -F'[\\(\\):]' '{print $2}')",
+      "Read(//tmp/**)",
+      "Bash(kill 9023)",
+      "Bash(xargs -r kill)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=6144\" npx tsc)",
+      "Bash(git fetch *)",
+      "Bash(git rev-list *)",
+      "Bash(tee /tmp/claude-1000/-home-runner-workspace/72a73c3c-1808-4721-a661-04441c83db33/scratchpad/tsc-final.txt)",
+      "Bash(npm test *)",
+      "Bash(npm run *)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

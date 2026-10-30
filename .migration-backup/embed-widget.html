@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Computer Systems Depot - Embeddable Intake Form</title>
+</head>
+<body>
+    <h1>Computer Systems Depot - Embeddable Form Examples</h1>
+    
+    <p>Use these code snippets to embed the Computer Systems Depot intake form on any website:</p>
+
+    <!-- Example 1: Simple iframe embed -->
+    <h2>Option 1: Simple iframe (Copy and paste this HTML)</h2>
+    <div style="background: #f5f5f5; padding: 15px; border: 1px solid #ddd; margin: 10px 0;">
+        <pre><code>&lt;iframe 
+    src="https://your-replit-app.repl.co/embed?source=website_embed" 
+    width="100%" 
+    height="800" 
+    frameborder="0" 
+    style="border: none; border-radius: 8px;"
+    title="Computer Systems Depot Intake Form"&gt;
+&lt;/iframe&gt;</code></pre>
+    </div>
+
+    <!-- Example 2: Smart widget with auto-resize -->
+    <h2>Option 2: Smart widget with auto-resize (Recommended)</h2>
+    <div style="background: #f5f5f5; padding: 15px; border: 1px solid #ddd; margin: 10px 0;">
+        <pre><code>&lt;div id="csd-intake-widget"&gt;&lt;/div&gt;
+&lt;script&gt;
+(function() {
+    var config = {
+        baseUrl: 'https://your-replit-app.repl.co',
+        source: 'website_widget',
+        campaign: '', // Optional campaign tracking
+        width: '100%',
+        height: '800px'
+    };
+    
+    // Create iframe
+    var iframe = document.createElement('iframe');
+    iframe.src = config.baseUrl + '/embed' + 
+        '?source=' + encodeURIComponent(config.source) +
+        (config.campaign ? '&campaign=' + encodeURIComponent(config.campaign) : '');
+    iframe.width = config.width;
+    iframe.height = config.height;
+    iframe.frameBorder = '0';
+    iframe.style.border = 'none';
+    iframe.style.borderRadius = '8px';
+    iframe.style.display = 'block';
+    iframe.title = 'Computer Systems Depot Intake Form';
+    
+    // Auto-resize functionality
+    window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'csd-iframe-resize') {
+            iframe.height = event.data.height + 'px';
+        }
+        
+        if (event.data && event.data.type === 'csd-form-success') {
+            // Form submitted successfully
+            console.log('CSD Form submitted successfully:', event.data.data);
+            // You can add custom success handling here
+        }
+    });
+    
+    // Insert into page
+    var container = document.getElementById('csd-intake-widget');
+    if (container) {
+        container.appendChild(iframe);
+    }
+})();
+&lt;/script&gt;</code></pre>
+    </div>
+
+    <!-- Example 3: WordPress shortcode -->
+    <h2>Option 3: WordPress Plugin (If using WordPress)</h2>
+    <div style="background: #f5f5f5; padding: 15px; border: 1px solid #ddd; margin: 10px 0;">
+        <pre><code>[csd_intake_form]
+
+or
+
+[csd_form_embed width="100%" height="600px"]</code></pre>
+    </div>
+
+    <!-- URL Parameters -->
+    <h2>URL Parameters for Tracking</h2>
+    <div style="background: #e8f4f8; padding: 15px; border: 1px solid #bee5eb; margin: 10px 0;">
+        <p><strong>Add these parameters to track sources and campaigns:</strong></p>
+        <ul>
+            <li><code>?source=phone_call</code> - Track where leads came from</li>
+            <li><code>&campaign=google_ads</code> - Track marketing campaigns</li>
+            <li><code>&call_id=12345</code> - Tie form to phone system records</li>
+        </ul>
+        
+        <p><strong>Example URLs:</strong></p>
+        <ul>
+            <li><code>https://computersystemsdepot.com/start-service</code></li>
+            <li><code>https://computersystemsdepot.com/start-service?source=phone_call&call_id=12345</code></li>
+        </ul>
+    </div>
+
+    <!-- Live Demo -->
+    <h2>Live Demo</h2>
+    <div style="border: 2px solid #007cba; border-radius: 8px; overflow: hidden; margin: 20px 0;">
+        <iframe 
+            src="https://your-replit-app.repl.co/embed?source=demo_page" 
+            width="100%" 
+            height="800" 
+            frameborder="0" 
+            style="border: none;"
+            title="Computer Systems Depot Intake Form Demo">
+        </iframe>
+    </div>
+
+    <!-- Instructions -->
+    <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 20px 0; border-radius: 5px;">
+        <h3 style="margin-top: 0;">Setup Instructions:</h3>
+        <ol>
+            <li>Replace <code>https://your-replit-app.repl.co</code> with your actual Replit app URL</li>
+            <li>Customize the <code>source</code> parameter to track different placements</li>
+            <li>Add <code>campaign</code> parameters for marketing attribution</li>
+            <li>Test the form on your website to ensure it works properly</li>
+            <li>Set up email notifications in your Replit app using SendGrid</li>
+        </ol>
+        
+        <p><strong>Need help?</strong> Contact Computer Systems Depot for support.</p>
+    </div>
+
+    <script>
+    // Auto-fill the current URL in examples
+    document.addEventListener('DOMContentLoaded', function() {
+        var replitUrl = 'https://your-replit-app.repl.co'; // Update this
+        var codeElements = document.querySelectorAll('code');
+        
+        codeElements.forEach(function(code) {
+            code.innerHTML = code.innerHTML.replace(
+                /https:\/\/your-replit-app\.repl\.co/g, 
+                replitUrl
+            );
+        });
+    });
+    </script>
+</body>
+</html>

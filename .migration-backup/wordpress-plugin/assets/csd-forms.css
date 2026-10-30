@@ -1,0 +1,122 @@
+/* Computer Systems Depot Forms Plugin Styles */
+
+.csd-intake-form {
+    margin: 20px 0;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.csd-form-loading {
+    text-align: center;
+    padding: 40px 20px;
+    background: #f8f9fa;
+    border: 2px dashed #dee2e6;
+    border-radius: 8px;
+    color: #6c757d;
+    font-size: 14px;
+}
+
+.csd-form-loading p {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.csd-form-loading p:before {
+    content: "⚙️";
+    animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Responsive iframe container */
+.csd-intake-form iframe {
+    max-width: 100%;
+    min-height: 600px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .csd-intake-form {
+        margin: 15px -15px;
+    }
+    
+    .csd-intake-form iframe {
+        border-radius: 0;
+        min-height: 700px;
+    }
+}
+
+/* Admin notices styling */
+.csd-admin-notice {
+    background: #e7f3ff;
+    border-left: 4px solid #007cba;
+    padding: 12px;
+    margin: 15px 0;
+}
+
+/* Settings page styles */
+.csd-settings-container {
+    max-width: 800px;
+}
+
+.csd-settings-container .form-table th {
+    padding-left: 0;
+}
+
+.csd-usage-instructions {
+    margin-top: 30px;
+    padding: 20px;
+    background: #f0f8ff;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+}
+
+.csd-usage-instructions h3 {
+    margin-top: 0;
+    color: #333;
+}
+
+.csd-usage-instructions code {
+    background: #fff;
+    padding: 2px 5px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 13px;
+}
+
+.csd-usage-instructions ul {
+    margin-left: 20px;
+}
+
+.csd-usage-instructions li {
+    margin-bottom: 5px;
+}
+
+/* Error states */
+.csd-form-error {
+    background: #ffebee;
+    border: 2px solid #f44336;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    color: #c62828;
+}
+
+.csd-form-error h3 {
+    margin: 0 0 10px 0;
+    color: #c62828;
+}
+
+.csd-form-error p {
+    margin: 0;
+    font-size: 14px;
+}

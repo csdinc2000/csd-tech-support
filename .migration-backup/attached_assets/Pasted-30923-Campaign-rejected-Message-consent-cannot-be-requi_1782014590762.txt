@@ -1,0 +1,35 @@
+30923: Campaign rejected: Message consent cannot be required for service use
+
+
+ERROR: 30923
+
+
+MESSAGING, PHONE NUMBERS
+ERROR
+Description
+
+
+Your A2P 10DLC campaign was rejected because your opt-in flow makes consent to receive messages a required condition for using your service, creating an account, or completing a transaction. For A2P 10DLC, campaign reviewers must be able to verify that end users knowingly agree to receive messages, that the consent applies to the specific campaign, and that the opt-in experience is voluntary and clearly documented.
+
+Possible causes
+
+
+Your sign-up, checkout, or account flow requires a user to agree to receive SMS or MMS messages before they can continue. (help.twilio.com
+)
+Your messaging consent is bundled with general terms of service or another required agreement, so the user cannot accept the service terms without also opting in to messaging.
+Your web form uses a checkbox for messaging consent that is preselected, or the user cannot clearly choose to decline messaging and still complete the form. (help.twilio.com
+)
+Your message_flow does not clearly explain how the user opts in, or it does not include every opt-in method used for the campaign.
+The website used for opt-in does not include accessible Terms and Conditions and Privacy Policy links, or the opt-in flow is not publicly verifiable.
+Possible solutions
+
+
+Update your opt-in flow so users can access the service, create an account, or complete a purchase without being required to consent to messaging. (help.twilio.com
+)
+Separate messaging consent from required service terms. Use a distinct opt-in action that specifically covers the messages you plan to send.
+If you use a checkbox, leave it unchecked by default and label it clearly as optional. (help.twilio.com
+)
+In your call to action, clearly disclose the messaging program details and make clear that consent is not a condition of purchase when that language applies to your flow. (help.twilio.com
+)
+Update the campaign message_flow to describe every opt-in method in detail. If opt-in happens on a website, include the website URL, the Privacy Policy URL, and the Terms and Conditions URL. If the flow is behind a login or not yet public, provide a publicly accessible URL to screenshots of the relevant pages.
+Keep records of consent for each recipient so you can show when and how the user agreed to receive messages for this specific campaign. After you correct the flow, resubmit the campaign for review.

@@ -1,0 +1,35 @@
+To make this process as smooth and seamless as possible for your customers, no, they do not need to look at or navigate your MeshCentral server dashboard. You want to keep them completely insulated from the technical side. Instead, they will download the file directly from a unique link that you give them, or through a button built right into your main application.
+
+Here is exactly how the flow works to make it effortless for your clients:
+
+🗺️ The Customer Download Flow
+1. Where the Customer Goes
+Instead of logging into MeshCentral, you generate a direct download link for that specific customer.
+
+You can email, text, or chat this link straight to them.
+
+Alternatively, we can code a simple "Download Remote Support Agent" button right inside your client-facing portal/website.
+
+2. What Happens When They Click It
+The customer clicks your link (e.g., https://mesh.csdinc.com/agent...).
+
+Their browser immediately starts downloading a single, lightweight executable file (like meshagent.exe for Windows).
+
+They never see a login screen, a dashboard, or your server setup. They just see a download progress bar in their browser.
+
+3. Connecting to the Support Session
+The customer opens their Downloads folder and double-clicks the file.
+
+A tiny window pops up asking them to click "Connect" or "Install".
+
+The moment they click that single button, the agent runs in the background.
+
+🎯 How It Appears on Your End
+The second that file finishes launching on their machine, the device instantly securely check-ins to your system:
+
+It automatically populates inside your internal application's Remote Access page.
+
+You can click a single button on your dashboard to instantly launch a live remote desktop, terminal, or file manager window to begin assisting them.
+
+To Make It Even Easier for You:
+Once your Replit secrets are connected to MeshCentral (MESHCENTRAL_URL, etc.), we can automate the link generation. When you open a customer's support ticket or job profile inside your app, the backend can auto-generate the exact link or button text you need to copy-paste to them with zero manual work on your part.

@@ -1,0 +1,109 @@
+JavaScript
+import express from 'express';
+import cors from 'cors';
+import { GoogleGenAI } from '@google/genai';
+
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: '20mb' }));
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// Single-pass Multi-Agent Orchestrator (Prevents 429 Rate Limits)
+app.post('/api/agent-command', async (req, res) => {
+  try {
+    const { userPrompt, cameraFrames } = req.body;
+
+    const promptParts = [
+      `You are operating as a 3-Agent Tactical Team at Computer Systems Depot. 
+Analyze the attached images from the 3 live camera feeds and generate a response formatted EXACTLY as structured below.
+
+AGENT ROLES & FEEDS:
+- Cam 1 Feed (Workbench/Room): Apex (Project Manager)
+- Cam 2 Feed (Scope/Macro): Circuit (Head Tech - Hardware Specialist)
+- Cam 3 Feed (Screen/Monitor): Nexus (Web Dev - Software & Code Specialist)
+
+USER DIRECTIVE: "${userPrompt || 'Routine inspection and status check.'}"
+
+OUTPUT FORMAT REQUIRED:
+[CIRCUIT REPORT]: (Specific hardware observations from Cam 2)
+[NEXUS REPORT]: (Specific screen/software/code observations from Cam 3)
+[APEX SYNTHESIS]: (As Lead PM, synthesize all findings into a direct, actionable summary for the user)`
+    ];
+
+    // Attach frames safely if present
+    if (cameraFrames.cam1) {
+      promptParts.push("--- CAMERA 1 FEED (Apex - PM Wide View) ---");
+      promptParts.push({ inlineData: { mimeType: 'image/jpeg', data: cameraFrames.cam1 } });
+    }
+    if (cameraFrames.cam2) {
+      promptParts.push("--- CAMERA 2 FEED (Circuit - Head Tech Scope) ---");
+      promptParts.push({ inlineData: { mimeType: 'image/jpeg', data: cameraFrames.cam2 } });
+    }
+    if (cameraFrames.cam3) {
+      promptParts.push("--- CAMERA 3 FEED (Nexus - Web Dev Screen) ---");
+      promptParts.push({ inlineData: { mimeType: 'image/jpeg', data: cameraFrames.cam3 } });
+    }
+
+    // Single consolidated API call = 1 request instead of 3
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash', 
+      contents: promptParts
+    });
+
+    const fullText = response.text || '';
+
+    // Parse out individual agent reports from single response
+    const circuitMatch = fullText.match(/\[CIRCUIT REPORT\]:(.*?)(?=\[NEXUS REPORT\]|\[APEX SYNTHESIS\]|$)/s);
+    const nexusMatch = fullText.match(/\[NEXUS REPORT\]:(.*?)(?=\[APEX SYNTHESIS\]|$)/s);
+    const apexMatch = fullText.match(/\[APEX SYNTHESIS\]:(.*?)$/s);
+
+    const reports = {
+      headTech: circuitMatch ? circuitMatch[1].trim() : 'No hardware issues detected.',
+      webDev: nexusMatch ? nexusMatch[1].trim() : 'No software errors visible.',
+      projectManager: apexMatch ? apexMatch[1].trim() : fullText
+    };
+
+    res.json({
+      success: true,
+      reports: reports,
+      finalSpeech: reports.projectManager
+    });
+
+  } catch (error) {
+    console.error('Rate Limit or Processing Error:', error);
+
+    // If still rate limited, pass standard retry advisory
+    if (error.status === 429 || (error.message && error.message.includes('429'))) {
+      return res.status(429).json({
+        success: false,
+        error: "Rate limit reached. Waiting 5 seconds before next scan cycle.",
+        retryAfter: 5
+      });
+    }
+
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log(`Aria Multi-Agent System on port ${PORT}`));
+3. Front-End Throttling (In AriaMultiCam.jsx)
+On your frontend button or capture timer, enforce a cool-down timer so the application cannot submit back-to-back requests within 5 seconds:
+
+JavaScript
+// Add a cool-down block in your handleAgentSubmit function:
+const [isCoolingDown, setIsCoolingDown] = useState(false);
+
+const handleAgentSubmit = async () => {
+  if (isCoolingDown) return;
+  setIsCoolingDown(true);
+  setLoading(true);
+
+  // ... [fetch execution] ...
+
+  // Reset lock after 5 seconds to comply with Free Tier rate windows
+  setTimeout(() => {
+    setIsCoolingDown(false);
+  }, 5000);
+};

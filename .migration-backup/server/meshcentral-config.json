@@ -1,0 +1,62 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Ylianst/MeshCentral/master/meshcentral-config-schema.json",
+  "settings": {
+    "cert": "remote.computersystemsdepot.com",
+    "WANonly": true,
+    "sessionKey": "CHANGE_THIS_TO_SECURE_RANDOM_STRING_BEFORE_DEPLOYMENT",
+    "port": 443,
+    "aliasPort": 443,
+    "redirPort": 80,
+    "redirAliasPort": 80,
+    "allowLoginToken": true,
+    "allowFraming": true,
+    "webRTC": false,
+    "nice404": false,
+    "selfUpdate": false,
+    "browserPing": 60,
+    "browserPong": 60,
+    "agentPing": 60,
+    "agentPong": 60,
+    "agentUpdateBlockSize": 65531,
+    "agentUpdateSystem": 1,
+    "compression": true,
+    "wsCompression": false,
+    "agentWsCompression": true,
+    "maxInvalidLogin": {
+      "time": 10,
+      "count": 10,
+      "coolofftime": 10
+    }
+  },
+  "domains": {
+    "": {
+      "title": "CSD Tech Support",
+      "title2": "Computer Systems Depot",
+      "minify": true,
+      "newAccounts": false,
+      "userNameIsEmail": true,
+      "agentInviteCodes": false,
+      "agentNoProxy": true,
+      "geoLocation": true,
+      "cookieIpCheck": false,
+      "allowHighQualityDesktop": true,
+      "desktopMultiplex": false,
+      "allowSavingDeviceCredentials": true,
+      "autoRemoveInactiveDevices": 30,
+      "mesh": {
+        "maxDevices": 1000
+      },
+      "httpHeaders": {
+        "strict-transport-security": "max-age=60000; includeSubDomains",
+        "x-frame-options": "sameorigin",
+        "x-content-type-options": "nosniff"
+      }
+    }
+  },
+  "letsencrypt": {
+    "email": "support@computersystemsdepot.com",
+    "names": "remote.computersystemsdepot.com",
+    "skipChallengeVerification": true,
+    "production": true
+  }
+}
