@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Monitor, Ticket, Eye, Settings, BarChart3, Users, CreditCard,
   Menu, X, Activity, Shield, Zap, Network, TrendingUp, Briefcase, UserCircle,
   MessageCircle, Bot, Building2, ClipboardList, ChevronDown, LifeBuoy, PhoneCall, FileText, Mail,
-  MapPin, Clock, Wrench, HeadphonesIcon, Sparkles, CalendarDays, Video, Radio, Archive, HeartPulse, Store, Package, GraduationCap,
+  MapPin, Clock, Wrench, HeadphonesIcon, Sparkles, CalendarDays, Video, Radio, Archive, HeartPulse, Store, Package, GraduationCap, Globe2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,7 @@ const navGroups: NavGroup[] = [
     feature: "crm",
     items: [
       { name: "Customers", href: "/crm/customers", icon: Building2, match: ["/crm", "/clients", "/crm/contacts", "/crm/leads", "/crm/pipeline", "/admin/intakes"] },
+      { name: "Website Discovery", href: "/website-discovery", icon: Globe2 },
       { name: "Retained deleted contacts", href: "/crm/retained-contacts", icon: Archive, adminOnly: true },
       { name: "Jobs & Work Orders", href: "/crm/jobs", icon: Briefcase },
       { name: "Service Logs", href: "/service-logs", icon: ClipboardList },
