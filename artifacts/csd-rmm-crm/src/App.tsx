@@ -22,6 +22,7 @@ import Monitoring from "@/pages/monitoring";
 import Patches from "@/pages/patches";
 import Reports from "@/pages/reports";
 import NetworkDiscovery from "@/pages/network-discovery";
+import WebsiteDiscovery from "@/pages/website-discovery";
 import CsdIntakePage from "@/pages/csd-intake";
 import WebAppIntakePage from "@/pages/web-app-intake";
 import EmbedPage from "@/pages/embed";
@@ -253,6 +254,7 @@ export function AdminRouter({ ownerAccessOverride }: { ownerAccessOverride?: Own
       <Route path="/automation-hub"><RequireFeature feature="automation"><AutomationWorkspace /></RequireFeature></Route>
       <Route path="/reports"><RequireFeature feature="reports"><Reports /></RequireFeature></Route>
       <Route path="/network-discovery"><RequireFeature feature="operations"><NetworkDiscovery /></RequireFeature></Route>
+      <Route path="/website-discovery"><RequireFeature feature="crm"><WebsiteDiscovery /></RequireFeature></Route>
 
       {/* Customers hub — Overview / Leads & Pipeline (Leads + Deals + Intakes) / Contacts / Clients */}
       <Route path="/crm"><RequireFeature feature="crm"><CustomersHub /></RequireFeature></Route>
