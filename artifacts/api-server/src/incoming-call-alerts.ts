@@ -133,12 +133,14 @@ export function registerIncomingCallAlerts(
     res.setHeader("Cache-Control", "no-store");
     const callIdText = req.params.id;
     if (!/^[1-9]\d*$/.test(callIdText)) {
-      return res.status(404).json({ error: "Call not found" });
+      res.status(404).json({ error: "Call not found" });
+      return;
     }
     try {
       const call = await getCallForwardingReadContext(Number(callIdText));
       if (!call || call.direction !== "inbound") {
-        return res.status(404).json({ error: "Call not found" });
+        res.status(404).json({ error: "Call not found" });
+        return;
       }
       const scope = await getStaffAssignmentScope(req);
       const explicitlyAssignedContact =
@@ -150,7 +152,8 @@ export function registerIncomingCallAlerts(
         ((call.contactId !== null && !explicitlyAssignedContact && !assignedCustomer) ||
           (call.contactId === null && call.clientId !== null && !assignedCustomer))
       ) {
-        return res.status(404).json({ error: "Call not found" });
+        res.status(404).json({ error: "Call not found" });
+        return;
       }
 
       const [settings, saved] = await Promise.all([
@@ -160,14 +163,16 @@ export function registerIncomingCallAlerts(
       const outcomes = await withVoiceRoutingDeadline(readForwardingCallOutcomes({
         list: () => listTwilioChildCalls(call.callSid),
       }, configuredForwardTargets(settings), saved), 3000);
-      return res.json({
+      res.json({
         outcomes,
         interpretation:
           "Twilio ringing and connected statuses describe provider call progress, not audible handset ringing. Human acceptance is confirmed only when the destination pressed 1.",
       });
+      return;
     } catch {
       logger.warn("Forwarded call outcome lookup unavailable");
-      return res.status(503).json({ error: "Forwarding outcomes are unavailable right now" });
+      res.status(503).json({ error: "Forwarding outcomes are unavailable right now" });
+      return;
     }
   });
 }

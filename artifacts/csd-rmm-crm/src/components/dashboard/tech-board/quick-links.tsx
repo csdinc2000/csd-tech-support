@@ -23,8 +23,21 @@ export function BoardQuickLinks({ can }: { can: (feature: StaffFeature) => boole
     .filter((group) => group.links.length > 0);
 
   return (
-    <nav aria-label="Tech support quick links" className="flex flex-wrap items-center gap-1.5" data-testid="board-quick-links">
-      <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Quick links</span>
+    <nav
+      aria-label="Tech support quick links"
+      className="-mx-3 flex items-center gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
+      data-testid="board-quick-links"
+    >
+      <span className="mr-1 hidden text-[11px] font-semibold uppercase tracking-wider text-gray-500 sm:inline">Quick links</span>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-8 shrink-0 rounded-full px-3 text-xs sm:hidden"
+        onClick={() => setOpen(true)}
+        aria-label="All links"
+      >
+        <LayoutGrid className="h-3.5 w-3.5" />
+      </Button>
       {pinned.map((link) => {
         const Icon = link.icon;
         return (
@@ -32,7 +45,7 @@ export function BoardQuickLinks({ can }: { can: (feature: StaffFeature) => boole
             key={link.id}
             href={link.href}
             title={link.description}
-            className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:border-csd-red/40 hover:text-csd-red"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:border-csd-red/40 hover:text-csd-red"
             data-testid={`board-link-${link.id}`}
           >
             <Icon className="h-3.5 w-3.5" />
@@ -43,7 +56,7 @@ export function BoardQuickLinks({ can }: { can: (feature: StaffFeature) => boole
       <Button
         variant="ghost"
         size="sm"
-        className="h-7 rounded-full px-3 text-xs text-gray-600"
+        className="hidden h-8 shrink-0 rounded-full px-3 text-xs text-gray-600 sm:inline-flex"
         onClick={() => setOpen(true)}
         data-testid="board-all-links"
       >

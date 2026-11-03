@@ -64,6 +64,7 @@ import { pool } from "./db";
 
 import { applyCallForwardingStaffOutcomesMigration } from "./migrations/2026-10-27-call-forwarding-staff-outcomes";
 import { applySharedInboxMigration } from "./migrations/2026-10-30-shared-inbox";
+import { applyReferralsMigration } from "./migrations/2026-10-30-referrals";
 
 const log = (message: string) => logger.info(message);
 
@@ -130,7 +131,8 @@ app.post(
   async (req, res) => {
     const signature = req.headers["stripe-signature"];
     if (!signature) {
-      return res.status(400).json({ error: "Missing stripe-signature" });
+      res.status(400).json({ error: "Missing stripe-signature" });
+      return;
     }
     try {
       const sig = Array.isArray(signature) ? signature[0] : signature;
@@ -140,10 +142,12 @@ app.post(
       const event = JSON.parse(req.body.toString("utf8"));
       await handleInvoiceStripeWebhookEvent(event);
       await handleCatalogStripeWebhookEvent(event);
-      return res.status(200).json({ received: true });
+      res.status(200).json({ received: true });
+      return;
     } catch (error: any) {
       console.error("Stripe webhook error:", error?.message ?? error);
-      return res.status(400).json({ error: "Webhook processing error" });
+      res.status(400).json({ error: "Webhook processing error" });
+      return;
     }
   }
 );
@@ -409,6 +413,11 @@ async function initStripe() {
     await applySharedInboxMigration();
   } catch (err: any) {
     logger.error({ error: err }, "Shared inbox migration failed");
+  }
+  try {
+    await applyReferralsMigration();
+  } catch (err: any) {
+    logger.error({ error: err }, "Referrals migration failed");
   }
   await initStripe();
   startCatalogReconciliationWorker();

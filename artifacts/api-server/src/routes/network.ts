@@ -94,11 +94,13 @@ router.post("/scans", async (req, res) => {
   try {
     const { networkRange } = req.body ?? {};
     if (!networkRange || typeof networkRange !== "string") {
-      return res.status(400).json({ error: "Network range is required" });
+      res.status(400).json({ error: "Network range is required" });
+      return;
     }
     const validRange = /^[\d.]+\/\d{1,2}$/.test(networkRange);
     if (!validRange) {
-      return res.status(400).json({ error: "Network range must be CIDR notation (e.g. 192.168.1.0/24)" });
+      res.status(400).json({ error: "Network range must be CIDR notation (e.g. 192.168.1.0/24)" });
+      return;
     }
 
     // Persist the scan row first so it shows in history immediately.

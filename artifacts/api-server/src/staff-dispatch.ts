@@ -226,7 +226,10 @@ async function audit(
 }
 
 const requireOwner: RequestHandler = (req, res, next) => {
-  if (!isAdminUser(req)) return res.status(403).json({ error: "Owner access required" });
+  if (!isAdminUser(req)) {
+    res.status(403).json({ error: "Owner access required" });
+    return;
+  }
   next();
 };
 
@@ -277,11 +280,15 @@ export function registerStaffDispatchRoutes(app: Express): void {
 
   app.post("/api/staff-dispatch/settings", async (req, res) => {
     const parsed = parseRecipientInput(req.body);
-    if (!parsed.success) return res.status(400).json({ error: "Invalid recipient", details: parsed.error.flatten() });
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid recipient", details: parsed.error.flatten() });
+      return;
+    }
     try {
       await ensureStaffDispatchTables();
       if (parsed.data.linkedUserId == null) {
-        return res.status(400).json({ error: "Approve the staff account and link its helpdesk assignee before adding a dispatch recipient" });
+        res.status(400).json({ error: "Approve the staff account and link its helpdesk assignee before adding a dispatch recipient" });
+        return;
       }
       if (parsed.data.linkedUserId != null) {
         const user = await pool.query(
@@ -292,7 +299,10 @@ export function registerStaffDispatchRoutes(app: Express): void {
            WHERE h.id=$1`,
           [parsed.data.linkedUserId],
         );
-        if (user.rows.length !== 1) return res.status(400).json({ error: "Link a unique approved Staff Access account before assigning tickets" });
+        if (user.rows.length !== 1) {
+          res.status(400).json({ error: "Link a unique approved Staff Access account before assigning tickets" });
+          return;
+        }
         parsed.data.role = user.rows[0].role === "field_technician" ? "technician" : "staff";
       }
       const client = await pool.connect();
@@ -326,7 +336,10 @@ export function registerStaffDispatchRoutes(app: Express): void {
   app.patch("/api/staff-dispatch/settings/:id", async (req, res) => {
     const id = Number(req.params.id);
     const parsed = parseRecipientPatch(req.body);
-    if (!Number.isInteger(id) || !parsed.success) return res.status(400).json({ error: "Invalid recipient" });
+    if (!Number.isInteger(id) || !parsed.success) {
+      res.status(400).json({ error: "Invalid recipient" });
+      return;
+    }
     try {
       await ensureStaffDispatchTables();
       const client = await pool.connect();
@@ -335,7 +348,8 @@ export function registerStaffDispatchRoutes(app: Express): void {
         const beforeResult = await client.query("SELECT * FROM staff_dispatch_recipients WHERE id=$1 FOR UPDATE", [id]);
         if (!beforeResult.rows[0]) {
           await client.query("ROLLBACK");
-          return res.status(404).json({ error: "Recipient not found" });
+          res.status(404).json({ error: "Recipient not found" });
+          return;
         }
         const before = recipientFromRow(beforeResult.rows[0]);
         const merged = recipientInput.parse({
@@ -345,7 +359,8 @@ export function registerStaffDispatchRoutes(app: Express): void {
         const d = merged;
         if (!d.linkedUserId && d.enabled && d.onDuty && (d.receiveCalls || d.receiveMessages || d.canUseCommands)) {
           await client.query("ROLLBACK");
-          return res.status(400).json({ error: "A linked approved helpdesk assignee is required for active dispatch" });
+          res.status(400).json({ error: "A linked approved helpdesk assignee is required for active dispatch" });
+          return;
         }
         if (d.linkedUserId != null) {
           const user = await client.query(
@@ -360,7 +375,8 @@ export function registerStaffDispatchRoutes(app: Express): void {
             d.role = user.rows[0].role === "field_technician" ? "technician" : "staff";
           } else if (d.linkedUserId !== before.linkedUserId) {
             await client.query("ROLLBACK");
-            return res.status(400).json({ error: "Link an approved Staff Access account before assigning tickets" });
+            res.status(400).json({ error: "Link an approved Staff Access account before assigning tickets" });
+            return;
           }
         }
         const result = await client.query(
@@ -390,7 +406,10 @@ export function registerStaffDispatchRoutes(app: Express): void {
 
   app.delete("/api/staff-dispatch/settings/:id", async (req, res) => {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid recipient id" });
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: "Invalid recipient id" });
+      return;
+    }
     try {
       await ensureStaffDispatchTables();
       const client = await pool.connect();
@@ -399,7 +418,8 @@ export function registerStaffDispatchRoutes(app: Express): void {
         const result = await client.query("DELETE FROM staff_dispatch_recipients WHERE id=$1 RETURNING *", [id]);
         if (!result.rows[0]) {
           await client.query("ROLLBACK");
-          return res.status(404).json({ error: "Recipient not found" });
+          res.status(404).json({ error: "Recipient not found" });
+          return;
         }
         const before = recipientFromRow(result.rows[0]);
         await audit(client, {

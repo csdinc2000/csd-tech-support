@@ -21,6 +21,7 @@ import {
 import { eq, desc, sql, and, or } from "drizzle-orm";
 import { assertValidContactPhones } from "./phone-validation";
 import { toValidE164 } from "./phone-validation";
+import { matchUniqueCallContact, type CallContactCandidate } from "./call-contact-match";
 import { z } from "zod/v4";
 import { APPROVED_RECIPIENT, ensureStaffDispatchTables, enqueueStaffEventNotification } from "./staff-dispatch";
 
@@ -354,69 +355,76 @@ export async function getRecentCalls(limit: number = 100) {
       COALESCE(cl.source_channel, tn.source_channel) AS source_channel,
       tn.campaign_name,
       tn.phone_number AS tracking_number,
-      COALESCE(linked_contact.id, matched_contact.id) AS contact_id,
-      COALESCE(linked_contact.full_name, matched_contact.full_name) AS contact_name,
+      cl.contact_id AS stored_contact_id,
+      linked_contact.id AS contact_id,
+      linked_contact.full_name AS contact_name,
       linked_contact.company AS contact_company,
-      COALESCE(linked_contact.client_id, matched_contact.client_id) AS client_id,
+      linked_contact.client_id AS client_id,
       customer.name AS client_name,
       linked_ticket.id AS support_ticket_id,
       linked_ticket.ticket_number AS support_ticket_number
     FROM call_log cl
     LEFT JOIN tracking_numbers tn ON tn.id = cl.tracking_number_id
     LEFT JOIN crm_contacts linked_contact ON linked_contact.id = cl.contact_id
-    LEFT JOIN LATERAL (
-      SELECT cc.id, cc.full_name, cc.client_id
-      FROM crm_contacts cc
-      WHERE
-        cl.contact_id IS NULL
-        AND
-        COALESCE(cc.tags, '') <> '__deleted_contact_placeholder__'
-        AND RIGHT(REGEXP_REPLACE(
-          CASE WHEN cl.direction = 'outbound' THEN cl.to_number ELSE cl.from_number END,
-          '[^0-9]', '', 'g'
-        ), 10) <> ''
-        AND (
-          RIGHT(REGEXP_REPLACE(COALESCE(cc.mobile_phone, ''), '[^0-9]', '', 'g'), 10)
-            = RIGHT(REGEXP_REPLACE(
-                CASE WHEN cl.direction = 'outbound' THEN cl.to_number ELSE cl.from_number END,
-                '[^0-9]', '', 'g'
-              ), 10)
-          OR RIGHT(REGEXP_REPLACE(COALESCE(cc.office_phone, ''), '[^0-9]', '', 'g'), 10)
-            = RIGHT(REGEXP_REPLACE(
-                CASE WHEN cl.direction = 'outbound' THEN cl.to_number ELSE cl.from_number END,
-                '[^0-9]', '', 'g'
-              ), 10)
-        )
-      ORDER BY cc.updated_at DESC NULLS LAST, cc.id DESC
-      LIMIT 1
-    ) matched_contact ON TRUE
-    LEFT JOIN clients customer ON customer.id = COALESCE(linked_contact.client_id, matched_contact.client_id)
+    LEFT JOIN clients customer ON customer.id = linked_contact.client_id
     LEFT JOIN tickets linked_ticket ON linked_ticket.id = cl.support_ticket_id
     ORDER BY cl.created_at DESC
     LIMIT ${limit}
   `);
   const rows = result?.rows ?? result ?? [];
-  return rows.map((r: any) => ({
-    id: r.id,
-    callSid: r.call_sid,
-    fromNumber: r.from_number,
-    toNumber: r.to_number,
-    status: r.status,
-    direction: r.direction,
-    durationSeconds: Number(r.duration_seconds ?? 0),
-    hadVoicemail: Boolean(r.had_voicemail),
-    createdAt: r.created_at,
-    sourceChannel: r.source_channel,
-    campaignName: r.campaign_name,
-    trackingNumber: r.tracking_number,
-    contactId: r.contact_id,
-    contactName: r.contact_name,
-    contactCompany: r.contact_company,
-    clientId: r.client_id,
-    clientName: r.client_name,
-    supportTicketId: r.support_ticket_id,
-    supportTicketNumber: r.support_ticket_number,
-  }));
+  let fallbackContacts: CallContactCandidate[] = [];
+  if (rows.some((row: any) => row.stored_contact_id == null)) {
+    const contactResult: any = await db.execute(sql`
+      SELECT
+        cc.id,
+        cc.full_name,
+        cc.company,
+        cc.client_id,
+        cc.mobile_phone,
+        cc.office_phone,
+        customer.name AS client_name
+      FROM crm_contacts cc
+      LEFT JOIN clients customer ON customer.id = cc.client_id
+      WHERE COALESCE(cc.tags, '') <> '__deleted_contact_placeholder__'
+        AND (cc.mobile_phone IS NOT NULL OR cc.office_phone IS NOT NULL)
+    `);
+    fallbackContacts = (contactResult?.rows ?? contactResult ?? []).map((contact: any) => ({
+      id: Number(contact.id),
+      fullName: contact.full_name,
+      company: contact.company,
+      clientId: contact.client_id == null ? null : Number(contact.client_id),
+      clientName: contact.client_name,
+      mobilePhone: contact.mobile_phone,
+      officePhone: contact.office_phone,
+    }));
+  }
+  return rows.map((r: any) => {
+    const callPhone = r.direction === "outbound" ? r.to_number : r.from_number;
+    const fallbackContact = r.stored_contact_id == null
+      ? matchUniqueCallContact(callPhone, fallbackContacts)
+      : null;
+    return {
+      id: r.id,
+      callSid: r.call_sid,
+      fromNumber: r.from_number,
+      toNumber: r.to_number,
+      status: r.status,
+      direction: r.direction,
+      durationSeconds: Number(r.duration_seconds ?? 0),
+      hadVoicemail: Boolean(r.had_voicemail),
+      createdAt: r.created_at,
+      sourceChannel: r.source_channel,
+      campaignName: r.campaign_name,
+      trackingNumber: r.tracking_number,
+      contactId: r.contact_id ?? fallbackContact?.id ?? null,
+      contactName: r.contact_name ?? fallbackContact?.fullName ?? null,
+      contactCompany: r.contact_company ?? fallbackContact?.company ?? null,
+      clientId: r.client_id ?? fallbackContact?.clientId ?? null,
+      clientName: r.client_name ?? fallbackContact?.clientName ?? null,
+      supportTicketId: r.support_ticket_id,
+      supportTicketNumber: r.support_ticket_number,
+    };
+  });
 }
 
 export async function getCallForwardingReadContext(callId: number): Promise<{

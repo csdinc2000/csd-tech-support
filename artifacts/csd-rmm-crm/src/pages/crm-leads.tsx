@@ -354,8 +354,74 @@ export default function CrmLeads({ embedded = false }: { embedded?: boolean } = 
               </div>
             </CardTitle>
           </CardHeader>
-          <CardContent className="px-2 sm:px-6">
-            <div className="overflow-x-auto -mx-2 sm:mx-0">
+          <CardContent className="px-3 sm:px-6">
+            <div className="space-y-3 md:hidden">
+              {filteredLeads.length === 0 ? (
+                <p className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500">
+                  No leads found. Click "Add Lead" to create one.
+                </p>
+              ) : (
+                filteredLeads.map((lead) => (
+                  <article key={lead.id} data-testid={`mobile-row-lead-${lead.id}`} className="min-w-0 rounded-lg border bg-white p-3 shadow-sm">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="break-words font-semibold">{getContactName(lead.contactId)}</h3>
+                        <p className="mt-1 flex min-w-0 items-start gap-1 text-xs text-gray-500">
+                          <Phone className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span className="break-all">{getContactPhone(lead.contactId) || "No phone"}</span>
+                        </p>
+                      </div>
+                      <Select
+                        value={lead.status || "new"}
+                        onValueChange={(value) => handleStatusChange(lead.id, value as LeadStatus)}
+                      >
+                        <SelectTrigger className="h-8 w-[116px] shrink-0 text-xs" aria-label={`Status for ${getContactName(lead.contactId)}`} data-testid={`select-lead-status-mobile-${lead.id}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {statusOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <dl className="mt-3 grid min-w-0 grid-cols-2 gap-x-3 gap-y-2 border-t pt-3 text-sm">
+                      <div className="min-w-0">
+                        <dt className="text-xs text-gray-500">Service</dt>
+                        <dd className="break-words font-medium">{formatServiceType(lead.serviceType)}</dd>
+                        {lead.deviceType && <dd className="break-words text-xs text-gray-500">{[lead.deviceType, lead.brandModel].filter(Boolean).join(" · ")}</dd>}
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-xs text-gray-500">Source</dt>
+                        <dd className="break-words"><Badge variant="outline">{formatServiceType(lead.source || "Unknown")}</Badge></dd>
+                        {lead.campaign && <dd className="mt-0.5 break-words text-xs text-gray-500">{lead.campaign}</dd>}
+                      </div>
+                      <div>
+                        <dt className="text-xs text-gray-500">Value</dt>
+                        <dd className="font-medium">{lead.estimatedValue ? formatCurrency(lead.estimatedValue) : "—"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-gray-500">Created</dt>
+                        <dd>{lead.createdAt ? format(new Date(lead.createdAt), "MMM d, yyyy") : "—"}</dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-3 flex justify-end gap-2 border-t pt-2">
+                      <Button variant="outline" size="sm" onClick={() => handleViewDetail(lead)} data-testid={`button-view-lead-mobile-${lead.id}`}>
+                        <Eye className="mr-1.5 h-4 w-4" /> View
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleEdit(lead)} data-testid={`button-edit-lead-mobile-${lead.id}`}>
+                        <Edit className="mr-1.5 h-4 w-4" /> Edit
+                      </Button>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+
+            <div className="hidden min-w-0 md:block">
+              <p className="mb-2 text-right text-xs text-muted-foreground">Scroll horizontally to see all columns.</p>
               <Table className="min-w-[900px]">
                 <TableHeader>
                   <TableRow>

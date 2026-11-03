@@ -38,7 +38,8 @@ export function registerBillingRoutes(app: Express) {
   app.get("/api/billing/plans", async (_req, res) => {
     try {
       if (!(await isStripeConfigured())) {
-        return res.json({ configured: false, plans: [] });
+        res.json({ configured: false, plans: [] });
+        return;
       }
       const result = await db.execute(sql`
         SELECT
@@ -87,16 +88,21 @@ export function registerBillingRoutes(app: Express) {
   app.get("/api/billing/subscription", requireAuth, async (req: any, res) => {
     try {
       if (!(await isStripeConfigured())) {
-        return res.json({ configured: false, subscription: null });
+        res.json({ configured: false, subscription: null });
+        return;
       }
       const userId = req.dbUser.id;
       const [user] = await db.select().from(authUsers).where(eq(authUsers.id, userId));
-      if (!user) return res.status(404).json({ error: "User not found" });
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
 
       // Try to find an active subscription via the customer id
       let customerId = user.stripeCustomerId;
       if (!customerId) {
-        return res.json({ configured: true, subscription: null });
+        res.json({ configured: true, subscription: null });
+        return;
       }
 
       const subResult = await db.execute(sql`
@@ -111,7 +117,10 @@ export function registerBillingRoutes(app: Express) {
         LIMIT 1
       `);
       const row = (subResult.rows as any[])[0];
-      if (!row) return res.json({ configured: true, subscription: null });
+      if (!row) {
+        res.json({ configured: true, subscription: null });
+        return;
+      }
 
       // Persist latest subscription id
       if (user.stripeSubscriptionId !== row.id) {
@@ -151,12 +160,14 @@ export function registerBillingRoutes(app: Express) {
   app.get("/api/billing/invoices", requireAuth, async (req: any, res) => {
     try {
       if (!(await isStripeConfigured())) {
-        return res.json({ configured: false, invoices: [] });
+        res.json({ configured: false, invoices: [] });
+        return;
       }
       const userId = req.dbUser.id;
       const [user] = await db.select().from(authUsers).where(eq(authUsers.id, userId));
       if (!user?.stripeCustomerId) {
-        return res.json({ configured: true, invoices: [] });
+        res.json({ configured: true, invoices: [] });
+        return;
       }
 
       // Try local cache first
@@ -209,11 +220,13 @@ export function registerBillingRoutes(app: Express) {
   app.post("/api/billing/checkout", requireAuth, async (req: any, res) => {
     try {
       if (!(await isStripeConfigured())) {
-        return res.status(400).json({ error: "Stripe is not configured" });
+        res.status(400).json({ error: "Stripe is not configured" });
+        return;
       }
       const { priceId } = req.body ?? {};
       if (!priceId || typeof priceId !== "string") {
-        return res.status(400).json({ error: "priceId required" });
+        res.status(400).json({ error: "priceId required" });
+        return;
       }
 
       // Validate priceId is one of our active synced prices
@@ -224,12 +237,16 @@ export function registerBillingRoutes(app: Express) {
         LIMIT 1
       `);
       if ((priceCheck.rows as any[]).length === 0) {
-        return res.status(400).json({ error: "Unknown or inactive price" });
+        res.status(400).json({ error: "Unknown or inactive price" });
+        return;
       }
 
       const userId = req.dbUser.id;
       const [user] = await db.select().from(authUsers).where(eq(authUsers.id, userId));
-      if (!user) return res.status(404).json({ error: "User not found" });
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
 
       const customerId = await getOrCreateCustomerId(userId, user.email);
       const stripe = await getUncachableStripeClient();
@@ -252,11 +269,15 @@ export function registerBillingRoutes(app: Express) {
   app.post("/api/billing/portal", requireAuth, async (req: any, res) => {
     try {
       if (!(await isStripeConfigured())) {
-        return res.status(400).json({ error: "Stripe is not configured" });
+        res.status(400).json({ error: "Stripe is not configured" });
+        return;
       }
       const userId = req.dbUser.id;
       const [user] = await db.select().from(authUsers).where(eq(authUsers.id, userId));
-      if (!user) return res.status(404).json({ error: "User not found" });
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
 
       const customerId = await getOrCreateCustomerId(userId, user.email);
       const stripe = await getUncachableStripeClient();

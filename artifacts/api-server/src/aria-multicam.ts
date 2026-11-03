@@ -81,10 +81,11 @@ export function registerAriaMultiCamRoutes(app: Express) {
 
       const ai = getGeminiClient();
       if (!ai) {
-        return res.status(503).json({
+        res.status(503).json({
           success: false,
           error: "GEMINI_API_KEY is not configured. Switch to the Ollama (Local) backend or add a Gemini API key.",
         });
+        return;
       }
 
       const reports = await runGeminiMultiAgent(ai, userPrompt || "", cameraFrames);
@@ -99,11 +100,12 @@ export function registerAriaMultiCamRoutes(app: Express) {
       console.error("Multi-Agent Vision Error:", error);
 
       if (error.status === 429 || (error.message && error.message.includes("429"))) {
-        return res.status(429).json({
+        res.status(429).json({
           success: false,
           error: "Rate limit reached. Please wait a few seconds before the next scan.",
           retryAfter: 5,
         });
+        return;
       }
 
       res.status(500).json({ success: false, error: error.message });

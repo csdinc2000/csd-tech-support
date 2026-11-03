@@ -76,13 +76,17 @@ export function registerContactSmsRoutes(
   app.post("/api/sms/send", async (req, res): Promise<any> => {
     try {
       const { to, body } = req.body ?? {};
-      if (!to || !body) return res.status(400).json({ error: "to and body are required" });
+      if (!to || !body) {
+        res.status(400).json({ error: "to and body are required" });
+        return;
+      }
 
       const targetNumber = toValidE164(String(to));
       if (!targetNumber) {
-        return res.status(400).json({
+        res.status(400).json({
           error: "Destination phone number must be a valid E.164 number",
         });
+        return;
       }
       const contacts = await storage.getCrmContacts();
       const matchingContacts = contacts.filter((contact) =>
@@ -92,15 +96,21 @@ export function registerContactSmsRoutes(
       );
       const scope = await getStaffAssignmentScope(req);
       if (matchingContacts.some((contact) => !canSeeContact(scope, contact.id))) {
-        return res.status(404).json({ error: "Contact not found" });
+        res.status(404).json({ error: "Contact not found" });
+        return;
       }
       if (matchingContacts.some((contact) => !canEditContact(scope, contact.id))) {
-        return res.status(403).json({ error: "Contact edit assignment required" });
+        res.status(403).json({ error: "Contact edit assignment required" });
+        return;
       }
       if (matchingContacts.length === 0 && (await getStaffAccess(req)).approvalStatus !== "approved") {
-        return res.status(403).json({ error: "Approved staff access required" });
+        res.status(403).json({ error: "Approved staff access required" });
+        return;
       }
-      if (!(await isTwilioConfigured())) return res.status(400).json({ error: "Twilio is not configured" });
+      if (!(await isTwilioConfigured())) {
+        res.status(400).json({ error: "Twilio is not configured" });
+        return;
+      }
 
       // One central number: every staff text goes out from the business line,
       // even if the customer once texted a tracking number. `from` is ignored.
@@ -121,7 +131,8 @@ export function registerContactSmsRoutes(
     try {
       const messageClass = String(req.query.messageClass || "service") as SmsMessageClass;
       if (!["service", "marketing"].includes(messageClass)) {
-        return res.status(400).json({ error: "messageClass must be service or marketing" });
+        res.status(400).json({ error: "messageClass must be service or marketing" });
+        return;
       }
       const scope = await getStaffAssignmentScope(req);
       const contacts = (await storage.getCrmContacts()).filter((contact) => canSeeContact(scope, contact.id));
@@ -167,13 +178,29 @@ export function registerContactSmsRoutes(
       const rawIds = Array.isArray(req.body?.contactIds) ? req.body.contactIds : [];
       const contactIds = [...new Set<number>(rawIds.map(Number).filter((id: number): id is number => Number.isSafeInteger(id)))];
       if (!["service", "marketing"].includes(messageClass)) {
-        return res.status(400).json({ error: "messageClass must be service or marketing" });
+        res.status(400).json({ error: "messageClass must be service or marketing" });
+        return;
       }
-      if (!body) return res.status(400).json({ error: "Message body is required" });
-      if (body.length > 1600) return res.status(400).json({ error: "Message body is too long" });
-      if (!contactIds.length) return res.status(400).json({ error: "Select at least one contact" });
-      if (contactIds.length > 100) return res.status(400).json({ error: "Bulk sends are limited to 100 contacts" });
-      if (!(await isTwilioConfigured())) return res.status(400).json({ error: "Twilio is not configured" });
+      if (!body) {
+        res.status(400).json({ error: "Message body is required" });
+        return;
+      }
+      if (body.length > 1600) {
+        res.status(400).json({ error: "Message body is too long" });
+        return;
+      }
+      if (!contactIds.length) {
+        res.status(400).json({ error: "Select at least one contact" });
+        return;
+      }
+      if (contactIds.length > 100) {
+        res.status(400).json({ error: "Bulk sends are limited to 100 contacts" });
+        return;
+      }
+      if (!(await isTwilioConfigured())) {
+        res.status(400).json({ error: "Twilio is not configured" });
+        return;
+      }
 
       const results: Array<Record<string, unknown>> = [];
       const deliveredPhones = new Set<string>();

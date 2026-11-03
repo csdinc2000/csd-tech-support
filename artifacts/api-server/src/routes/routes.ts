@@ -108,6 +108,13 @@ const intakeSchema = z
     // How the customer filled in the form. "voice" marks requests completed
     // through the spoken intake assistant so staff can tell them apart.
     intake_channel: z.enum(["web", "voice"]).optional(),
+    // Marketing link the visitor landed on (see lib/utm-capture.ts in the
+    // client). Cleaned by normalizeUtmCampaign rather than validated, so a
+    // malformed tag never rejects a request.
+    utm_campaign: z.unknown().optional(),
+    // Referral code from a customer's share link (lib/utm-capture.ts). Unknown
+    // or invalid codes are ignored by recordIntakeReferral, never rejected.
+    referral_code: z.unknown().optional(),
   })
   .refine((d) => !!(d.mobile_phone && d.mobile_phone.length) || !!(d.email && d.email.length), {
     message: "Either mobile_phone or email is required",
@@ -176,7 +183,9 @@ import { customerPhotoInputSchema, decodeCustomerPhoto, registerCustomerPhotoRou
 import { registerGoogleContactRoutes } from "./google-contact-routes";
 import { registerContactSmsRoutes } from "./contact-sms-routes";
 import { registerSharedInboxRoutes } from "../shared-inbox";
+import { recordIntakeReferral, registerReferralRoutes, type ReferralMailer } from "../referrals";
 import { defaultAgentPhones, registerOutboundCallRoutes } from "./outbound-call-routes";
+import { registerBrowserVoiceRoutes } from "./browser-voice-routes";
 import { registerStaffMeetingRoutes } from "../staff-meetings";
 import { registerCommunicationEmailRoutes } from "../communication-email";
 import { registerStaffCalendarRoutes } from "../staff-calendar";
@@ -209,6 +218,7 @@ async function mirrorStaffSmsToForwardingPhones(input: {
 }
 import {
   buildIntakeAttribution,
+  normalizeUtmCampaign,
   buildIntakeDeal,
   intakePayloadFingerprint,
   mapIntakeClient,
@@ -235,6 +245,7 @@ type RouteRegistrationOptions = {
   isTwilioConfigured?: typeof defaultIsTwilioConfigured;
   sendSms?: typeof defaultSendSms;
   marketplaceMailer?: MarketplaceMailer;
+  referralMailer?: ReferralMailer;
   marketplaceScanReader?: MarketplaceScanReader;
   marketplaceLookupReader?: MarketplaceLookupReader | null;
 };
@@ -333,6 +344,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   registerStaffDispatchRoutes(app);
   registerServiceContractRoutes(app);
   registerMarketplaceRoutes(app, { mailer: options.marketplaceMailer, scanReader: options.marketplaceScanReader, lookupReader: options.marketplaceLookupReader });
+  registerReferralRoutes(app, { mailer: options.referralMailer });
   registerVoiceIntakeRoutes(app);
   await ensureInvoiceSchema();
   await applyCatalogInvoiceLinkMigration();
@@ -409,7 +421,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
 
     const rawHost = String(req.body?.host ?? "").trim();
     const portRaw = req.body?.port;
-    if (!rawHost) return res.status(400).json({ error: "Host is required" });
+    if (!rawHost) {
+      res.status(400).json({ error: "Host is required" });
+      return;
+    }
 
     // Normalize: strip scheme + path so users can paste a full URL.
     let host = rawHost;
@@ -421,10 +436,12 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     }
     host = host.replace(/^\[|\]$/g, ""); // strip IPv6 brackets
     if (!/^[a-zA-Z0-9.\-:_]+$/.test(host)) {
-      return res.status(400).json({ error: "That doesn't look like a valid hostname or IP." });
+      res.status(400).json({ error: "That doesn't look like a valid hostname or IP." });
+      return;
     }
     if (/^localhost$/i.test(host)) {
-      return res.status(400).json({ error: "Refusing to scan localhost or internal addresses." });
+      res.status(400).json({ error: "Refusing to scan localhost or internal addresses." });
+      return;
     }
 
     const result: any = { host, checkedAt: Date.now() };
@@ -450,9 +467,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
 
     // SSRF gate: refuse if anything resolves to a non-public address.
     if (resolved.length > 0 && !resolved.every((a) => isPublicIp(a.address))) {
-      return res.status(400).json({
+      res.status(400).json({
         error: "Refusing to scan a private, loopback, or internal address. Only public hosts are allowed.",
       });
+      return;
     }
 
     // All connections go to this validated public IP (no re-resolution).
@@ -591,7 +609,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const device = await storage.getDevice(parseInt(req.params.id));
       const scope = await getStaffAssignmentScope(req);
       if (!device || !canSeeClient(scope, device.clientId)) {
-        return res.status(404).json({ error: "Device not found" });
+        res.status(404).json({ error: "Device not found" });
+        return;
       }
       res.json(device);
     } catch (error) {
@@ -603,15 +622,20 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const deviceData = insertDeviceSchema.parse(req.body);
       const scope = await getStaffAssignmentScope(req);
-      if (!canSeeClient(scope, deviceData.clientId)) return res.status(403).json({ error: "Customer assignment required" });
+      if (!canSeeClient(scope, deviceData.clientId)) {
+        res.status(403).json({ error: "Customer assignment required" });
+        return;
+      }
       if (!scope.unrestricted && (deviceData.meshNodeId || deviceData.meshId || deviceData.teamviewerId)) {
-        return res.status(403).json({ error: "Administrator access required to bind a remote-management provider" });
+        res.status(403).json({ error: "Administrator access required to bind a remote-management provider" });
+        return;
       }
       const device = await storage.createDevice(deviceData);
       res.status(201).json(device);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid device data", details: error.issues });
+        res.status(400).json({ error: "Invalid device data", details: error.issues });
+        return;
       }
       res.status(500).json({ error: "Failed to create device" });
     }
@@ -622,18 +646,26 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const existing = await storage.getDevice(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !canSeeClient(scope, existing.clientId)) return res.status(404).json({ error: "Device not found" });
-      if (req.body?.clientId !== undefined && !canSeeClient(scope, req.body.clientId)) return res.status(403).json({ error: "Customer assignment required" });
+      if (!existing || !canSeeClient(scope, existing.clientId)) {
+        res.status(404).json({ error: "Device not found" });
+        return;
+      }
+      if (req.body?.clientId !== undefined && !canSeeClient(scope, req.body.clientId)) {
+        res.status(403).json({ error: "Customer assignment required" });
+        return;
+      }
       const providerFields = ["meshNodeId", "meshId", "teamviewerId"] as const;
       const changesProviderIdentity = providerFields.some((field) =>
         Object.prototype.hasOwnProperty.call(req.body ?? {}, field) && req.body[field] !== existing[field]
       );
       if (!scope.unrestricted && changesProviderIdentity) {
-        return res.status(403).json({ error: "Administrator access required to change a remote-management provider binding" });
+        res.status(403).json({ error: "Administrator access required to change a remote-management provider binding" });
+        return;
       }
       const device = await storage.updateDevice(id, req.body);
       if (!device) {
-        return res.status(404).json({ error: "Device not found" });
+        res.status(404).json({ error: "Device not found" });
+        return;
       }
       res.json(device);
     } catch (error) {
@@ -646,10 +678,14 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const existing = await storage.getDevice(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !canSeeClient(scope, existing.clientId)) return res.status(404).json({ error: "Device not found" });
+      if (!existing || !canSeeClient(scope, existing.clientId)) {
+        res.status(404).json({ error: "Device not found" });
+        return;
+      }
       const deleted = await storage.deleteDevice(id);
       if (!deleted) {
-        return res.status(404).json({ error: "Device not found" });
+        res.status(404).json({ error: "Device not found" });
+        return;
       }
       res.status(204).send();
     } catch (error) {
@@ -687,9 +723,13 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const alertData = insertAlertSchema.parse(req.body);
       const scope = await getStaffAssignmentScope(req);
       if (!canCreateAlertForSource(scope.staffAdministrator, alertData.alertSource)) {
-        return res.status(403).json({ error: "Administrator access required" });
+        res.status(403).json({ error: "Administrator access required" });
+        return;
       }
-      if (!(await canSeeAlert(scope, alertData))) return res.status(403).json({ error: "Customer or device assignment required" });
+      if (!(await canSeeAlert(scope, alertData))) {
+        res.status(403).json({ error: "Customer or device assignment required" });
+        return;
+      }
       const alert = await storage.createAlert(alertData);
 
       // Emergency-alert dispatch (SMS/email/Slack cascade) — record any
@@ -717,7 +757,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       res.status(201).json(warnings.length ? { ...alert, warnings } : alert);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid alert data", details: error.issues });
+        res.status(400).json({ error: "Invalid alert data", details: error.issues });
+        return;
       }
       res.status(500).json({ error: "Failed to create alert" });
     }
@@ -728,11 +769,18 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const existing = await storage.getAlert(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !(await canSeeAlert(scope, existing))) return res.status(404).json({ error: "Alert not found" });
-      if (!(await canSeeAlert(scope, { ...existing, ...req.body }))) return res.status(403).json({ error: "Customer or device assignment required" });
+      if (!existing || !(await canSeeAlert(scope, existing))) {
+        res.status(404).json({ error: "Alert not found" });
+        return;
+      }
+      if (!(await canSeeAlert(scope, { ...existing, ...req.body }))) {
+        res.status(403).json({ error: "Customer or device assignment required" });
+        return;
+      }
       const alert = await storage.updateAlert(id, req.body);
       if (!alert) {
-        return res.status(404).json({ error: "Alert not found" });
+        res.status(404).json({ error: "Alert not found" });
+        return;
       }
       res.json(alert);
     } catch (error) {
@@ -766,7 +814,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const ticket = await storage.getTicket(parseInt(req.params.id));
       const scope = await getStaffAssignmentScope(req);
       if (!ticket || !canSeeClient(scope, ticket.clientId)) {
-        return res.status(404).json({ error: "Ticket not found" });
+        res.status(404).json({ error: "Ticket not found" });
+        return;
       }
       res.json(ticket);
     } catch (error) {
@@ -778,7 +827,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const ticketData = insertTicketSchema.parse(req.body);
       const scope = await getStaffAssignmentScope(req);
-      if (!canSeeClient(scope, ticketData.clientId)) return res.status(403).json({ error: "Customer assignment required" });
+      if (!canSeeClient(scope, ticketData.clientId)) {
+        res.status(403).json({ error: "Customer assignment required" });
+        return;
+      }
       const ticket = await storage.createTicket(ticketData);
 
       // Persist the best-effort notification immediately after the ticket save;
@@ -798,7 +850,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       res.status(201).json(enriched);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid ticket data", details: error.issues });
+        res.status(400).json({ error: "Invalid ticket data", details: error.issues });
+        return;
       }
       res.status(500).json({ error: "Failed to create ticket" });
     }
@@ -809,11 +862,18 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const existing = await storage.getTicket(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !canSeeClient(scope, existing.clientId)) return res.status(404).json({ error: "Ticket not found" });
-      if (req.body?.clientId !== undefined && !canSeeClient(scope, req.body.clientId)) return res.status(403).json({ error: "Customer assignment required" });
+      if (!existing || !canSeeClient(scope, existing.clientId)) {
+        res.status(404).json({ error: "Ticket not found" });
+        return;
+      }
+      if (req.body?.clientId !== undefined && !canSeeClient(scope, req.body.clientId)) {
+        res.status(403).json({ error: "Customer assignment required" });
+        return;
+      }
       const ticket = await storage.updateTicket(id, req.body);
       if (!ticket) {
-        return res.status(404).json({ error: "Ticket not found" });
+        res.status(404).json({ error: "Ticket not found" });
+        return;
       }
       res.json(ticket);
     } catch (error) {
@@ -840,10 +900,16 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.get("/api/clients/:id/overview", async (req, res) => {
     try {
       const clientId = Number(req.params.id);
-      if (!Number.isSafeInteger(clientId) || clientId < 1) return res.status(400).json({ error: "Invalid client id" });
+      if (!Number.isSafeInteger(clientId) || clientId < 1) {
+        res.status(400).json({ error: "Invalid client id" });
+        return;
+      }
       const client = await storage.getClient(clientId);
       const scope = await getStaffAssignmentScope(req);
-      if (!client || !canSeeClient(scope, clientId)) return res.status(404).json({ error: "Client not found" });
+      if (!client || !canSeeClient(scope, clientId)) {
+        res.status(404).json({ error: "Client not found" });
+        return;
+      }
       const [contacts, devices, alerts, tickets, jobs, appointments] = await Promise.all([
         storage.getCrmContacts(), storage.getDevices(), storage.getActiveAlerts(), storage.getTickets(),
         storage.getCrmJobs(), storage.getAppointments(),
@@ -1089,7 +1155,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const client = await storage.getClient(parseInt(req.params.id));
       const scope = await getStaffAssignmentScope(req);
       if (!client || !canSeeClient(scope, client.id)) {
-        return res.status(404).json({ error: "Client not found" });
+        res.status(404).json({ error: "Client not found" });
+        return;
       }
       res.json(client);
     } catch (error) {
@@ -1104,7 +1171,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       res.status(201).json(client);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid client data", details: error.issues });
+        res.status(400).json({ error: "Invalid client data", details: error.issues });
+        return;
       }
       res.status(500).json({ error: "Failed to create client" });
     }
@@ -1114,10 +1182,14 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const id = parseInt(req.params.id);
       const scope = await getStaffAssignmentScope(req);
-      if (!canSeeClient(scope, id)) return res.status(404).json({ error: "Client not found" });
+      if (!canSeeClient(scope, id)) {
+        res.status(404).json({ error: "Client not found" });
+        return;
+      }
       const client = await storage.updateClient(id, req.body);
       if (!client) {
-        return res.status(404).json({ error: "Client not found" });
+        res.status(404).json({ error: "Client not found" });
+        return;
       }
       res.json(client);
     } catch (error) {
@@ -1142,7 +1214,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       res.status(201).json(scan);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid scan data", details: error.issues });
+        res.status(400).json({ error: "Invalid scan data", details: error.issues });
+        return;
       }
       res.status(500).json({ error: "Failed to create network scan" });
     }
@@ -1162,7 +1235,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const script = await storage.getAutomationScript(parseInt(req.params.id));
       if (!script) {
-        return res.status(404).json({ error: "Script not found" });
+        res.status(404).json({ error: "Script not found" });
+        return;
       }
       res.json(script);
     } catch (error) {
@@ -1178,7 +1252,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     } catch (error) {
       if (error instanceof z.ZodError) {
         console.warn("[automation-scripts] validation failed:", error.issues);
-        return res.status(400).json({ error: "Invalid script data", details: error.issues });
+        res.status(400).json({ error: "Invalid script data", details: error.issues });
+        return;
       }
       console.error("[automation-scripts] create failed:", error);
       res.status(500).json({ error: "Failed to create script" });
@@ -1190,7 +1265,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const script = await storage.updateAutomationScript(id, req.body);
       if (!script) {
-        return res.status(404).json({ error: "Script not found" });
+        res.status(404).json({ error: "Script not found" });
+        return;
       }
       res.json(script);
     } catch (error) {
@@ -1246,7 +1322,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const status = typeof req.query.status === "string" ? req.query.status : undefined;
       const deviceId = req.query.deviceId ? parseInt(String(req.query.deviceId), 10) : undefined;
-      if (deviceId != null && !(await canAccessAssignedDevice(req, deviceId))) return res.status(404).json({ error: "Device not found" });
+      if (deviceId != null && !(await canAccessAssignedDevice(req, deviceId))) {
+        res.status(404).json({ error: "Device not found" });
+        return;
+      }
       const patches = (await Promise.all((await storage.getDevicePatches({ status, deviceId })).map(async (patch) =>
         patch.deviceId != null && await canAccessAssignedDevice(req, patch.deviceId) ? patch : null
       ))).filter(Boolean) as any[];
@@ -1283,13 +1362,16 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const { patchIds, deviceIds, scheduleTime } = req.body ?? {};
       if (!Array.isArray(patchIds) || patchIds.length === 0) {
-        return res.status(400).json({ error: "patchIds (array) is required" });
+        res.status(400).json({ error: "patchIds (array) is required" });
+        return;
       }
       if (!Array.isArray(deviceIds) || deviceIds.length === 0) {
-        return res.status(400).json({ error: "deviceIds (array) is required" });
+        res.status(400).json({ error: "deviceIds (array) is required" });
+        return;
       }
       if (!(await Promise.all(deviceIds.map((id: unknown) => canAccessAssignedDevice(req, Number(id))))).every(Boolean)) {
-        return res.status(403).json({ error: "Device assignment required" });
+        res.status(403).json({ error: "Device assignment required" });
+        return;
       }
       const scheduledFor = scheduleTime ? new Date(scheduleTime) : new Date();
       const job = await storage.createPatchJob({
@@ -1332,11 +1414,13 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const { patchIds, deviceIds = [] } = req.body ?? {};
       if (!Array.isArray(patchIds) || patchIds.length === 0) {
-        return res.status(400).json({ error: "patchIds (array) is required" });
+        res.status(400).json({ error: "patchIds (array) is required" });
+        return;
       }
       if (!Array.isArray(deviceIds) ||
           !(await Promise.all(deviceIds.map((id: unknown) => canAccessAssignedDevice(req, Number(id))))).every(Boolean)) {
-        return res.status(403).json({ error: "Device assignment required" });
+        res.status(403).json({ error: "Device assignment required" });
+        return;
       }
       const job = await storage.createPatchJob({
         jobType: "download",
@@ -1399,7 +1483,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       if (Array.isArray(body.severityFilter)) update.severityFilter = body.severityFilter.join(",");
       if (Array.isArray(body.excludePatches)) update.excludePatches = body.excludePatches.join(",");
       const policy = await storage.updatePatchPolicy(id, update);
-      if (!policy) return res.status(404).json({ error: "Patch policy not found" });
+      if (!policy) {
+        res.status(404).json({ error: "Patch policy not found" });
+        return;
+      }
       res.json(policy);
     } catch (error) {
       res.status(500).json({ error: "Failed to update patch policy" });
@@ -1410,7 +1497,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const id = parseInt(req.params.id, 10);
       const ok = await storage.deletePatchPolicy(id);
-      if (!ok) return res.status(404).json({ error: "Patch policy not found" });
+      if (!ok) {
+        res.status(404).json({ error: "Patch policy not found" });
+        return;
+      }
       res.status(204).end();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete patch policy" });
@@ -1426,26 +1516,31 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const script = await storage.getAutomationScript(id);
       if (!script) {
-        return res.status(404).json({ error: "Script not found" });
+        res.status(404).json({ error: "Script not found" });
+        return;
       }
       if (!meshCentralService.isConfigured()) {
-        return res.status(503).json({
+        res.status(503).json({
           error: "MeshCentral is not configured (MESHCENTRAL_URL missing); cannot execute scripts on devices.",
         });
+        return;
       }
 
       const { deviceIds } = req.body ?? {};
       const targets: number[] = Array.isArray(deviceIds) ? deviceIds.map(Number).filter(Number.isFinite) : [];
       if (targets.length === 0) {
-        return res.status(400).json({ error: "deviceIds (array) is required" });
+        res.status(400).json({ error: "deviceIds (array) is required" });
+        return;
       }
       if (!(await Promise.all(targets.map((deviceId) => canAccessAssignedDevice(req, deviceId)))).every(Boolean)) {
-        return res.status(403).json({ error: "Device assignment required" });
+        res.status(403).json({ error: "Device assignment required" });
+        return;
       }
 
       const meshClient = getMeshCentralClient();
       if (!meshClient) {
-        return res.status(503).json({ error: "MeshCentral client unavailable" });
+        res.status(503).json({ error: "MeshCentral client unavailable" });
+        return;
       }
 
       const startTime = new Date();
@@ -1515,16 +1610,19 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
 
       const device = await storage.getDevice(deviceId);
       if (!device || !(await canAccessAssignedDevice(req, deviceId))) {
-        return res.status(404).json({ error: "Device not found" });
+        res.status(404).json({ error: "Device not found" });
+        return;
       }
       if (device.status !== "online") {
-        return res.status(400).json({ error: "Device is offline" });
+        res.status(400).json({ error: "Device is offline" });
+        return;
       }
       if (!device.meshNodeId) {
-        return res.status(400).json({
+        res.status(400).json({
           error: "MeshCentral is not configured for this device",
           hint: "Set the device's meshNodeId or use the TeamViewer launcher instead.",
         });
+        return;
       }
 
       const meshClient = getMeshCentralClient();
@@ -1557,7 +1655,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       }
 
       if (!sessionUrl) {
-        return res.status(502).json({ error: "MeshCentral did not return a session URL" });
+        res.status(502).json({ error: "MeshCentral did not return a session URL" });
+        return;
       }
 
       const session = await storage.createRemoteSession({
@@ -1599,14 +1698,16 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
 
       const device = await storage.getDevice(deviceId);
       if (!device || !(await canAccessAssignedDevice(req, deviceId))) {
-        return res.status(404).json({ error: "Device not found" });
+        res.status(404).json({ error: "Device not found" });
+        return;
       }
       const tvId = normalizeTeamviewerId(device.teamviewerId);
       if (!tvId) {
-        return res.status(400).json({
+        res.status(400).json({
           error: "Device has no TeamViewer ID configured",
           code: "TEAMVIEWER_ID_MISSING",
         });
+        return;
       }
 
       const launchUrl = buildTeamviewerLaunchUrl({
@@ -1675,13 +1776,15 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
 
       const device = await storage.getDevice(deviceId);
       if (!device || !(await canAccessAssignedDevice(req, deviceId))) {
-        return res.status(404).json({ error: "Device not found" });
+        res.status(404).json({ error: "Device not found" });
+        return;
       }
       if (!device.meshNodeId) {
-        return res.status(400).json({
+        res.status(400).json({
           error: "MeshCentral is not configured for this device",
           hint: "Set the device's meshNodeId before generating a support code.",
         });
+        return;
       }
 
       const redirectUrl = await meshCentralService.createRemoteSession(
@@ -1689,7 +1792,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         sessionType,
       );
       if (!redirectUrl) {
-        return res.status(502).json({ error: "MeshCentral did not return a session URL" });
+        res.status(502).json({ error: "MeshCentral did not return a session URL" });
+        return;
       }
 
       const record = createSupportCode({
@@ -1718,25 +1822,28 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const parsed = redeemCodeSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({
+        res.status(400).json({
           ok: false,
           message: "A valid code is required.",
         });
+        return;
       }
       const clientKey = req.ip || req.get("x-forwarded-for") || "unknown";
       const result = redeemSupportCode(parsed.data.code, clientKey);
 
       if (!result.ok) {
         if (result.reason === "throttled") {
-          return res.status(429).json({
+          res.status(429).json({
             ok: false,
             message: "Too many attempts. Please wait a minute, then call 954-637-7300.",
           });
+          return;
         }
-        return res.status(200).json({
+        res.status(200).json({
           ok: false,
           message: "That code wasn't recognized or has expired. Please call us at 954-637-7300.",
         });
+        return;
       }
 
       // Record the redemption as an active session for audit/visibility.
@@ -1768,15 +1875,20 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const sessionId = parseInt(req.params.id);
       if (Number.isNaN(sessionId)) {
-        return res.status(400).json({ error: "Invalid session id" });
+        res.status(400).json({ error: "Invalid session id" });
+        return;
       }
       const existing = (await storage.getActiveRemoteSessions()).find((session) => session.id === sessionId);
-      if (!existing || !(await canAccessAssignedDevice(req, existing.deviceId))) return res.status(404).json({ error: "Session not found" });
+      if (!existing || !(await canAccessAssignedDevice(req, existing.deviceId))) {
+        res.status(404).json({ error: "Session not found" });
+        return;
+      }
       const session = await storage.endRemoteSession(sessionId, {
         status: req.body?.status ?? "ended",
       });
       if (!session) {
-        return res.status(404).json({ error: "Session not found" });
+        res.status(404).json({ error: "Session not found" });
+        return;
       }
       res.json(session);
     } catch (error) {
@@ -1789,13 +1901,18 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const id = parseInt(req.params.id);
       if (Number.isNaN(id)) {
-        return res.status(400).json({ error: "Invalid session id" });
+        res.status(400).json({ error: "Invalid session id" });
+        return;
       }
       const existing = (await storage.getActiveRemoteSessions()).find((session) => session.id === id);
-      if (!existing || !(await canAccessAssignedDevice(req, existing.deviceId))) return res.status(404).json({ error: "Session not found" });
+      if (!existing || !(await canAccessAssignedDevice(req, existing.deviceId))) {
+        res.status(404).json({ error: "Session not found" });
+        return;
+      }
       const deleted = await storage.deleteRemoteSession(id);
       if (!deleted) {
-        return res.status(404).json({ error: "Session not found" });
+        res.status(404).json({ error: "Session not found" });
+        return;
       }
       res.json({ success: true });
     } catch (error) {
@@ -1834,7 +1951,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const { userId } = req.body;
       const existing = await storage.getAlert(alertId);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !(await canSeeAlert(scope, existing))) return res.status(404).json({ error: "Alert not found" });
+      if (!existing || !(await canSeeAlert(scope, existing))) {
+        res.status(404).json({ error: "Alert not found" });
+        return;
+      }
       
       const alert = await storage.updateAlert(alertId, {
         status: 'acknowledged',
@@ -1866,7 +1986,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const clientId = parseInt(req.params.clientId, 10);
       if (Number.isNaN(clientId)) {
-        return res.status(400).json({ error: "Invalid clientId" });
+        res.status(400).json({ error: "Invalid clientId" });
+        return;
       }
       const contacts = await storage.getEmergencyContacts(clientId);
       res.json(contacts);
@@ -1880,7 +2001,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const body = req.body ?? {};
       if (!body.clientId || !body.name || !body.phone || !body.email) {
-        return res.status(400).json({ error: "clientId, name, phone, email are required" });
+        res.status(400).json({ error: "clientId, name, phone, email are required" });
+        return;
       }
       const contact = await storage.createEmergencyContact({
         clientId: Number(body.clientId),
@@ -1904,7 +2026,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const id = parseInt(req.params.id, 10);
       const contact = await storage.updateEmergencyContact(id, req.body ?? {});
-      if (!contact) return res.status(404).json({ error: "Emergency contact not found" });
+      if (!contact) {
+        res.status(404).json({ error: "Emergency contact not found" });
+        return;
+      }
       res.json(contact);
     } catch (error) {
       res.status(500).json({ error: "Failed to update emergency contact" });
@@ -1915,7 +2040,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const id = parseInt(req.params.id, 10);
       const ok = await storage.deleteEmergencyContact(id);
-      if (!ok) return res.status(404).json({ error: "Emergency contact not found" });
+      if (!ok) {
+        res.status(404).json({ error: "Emergency contact not found" });
+        return;
+      }
       res.status(204).end();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete emergency contact" });
@@ -1928,12 +2056,13 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.get("/api/meshcentral/status", async (req, res) => {
     try {
       if (!meshCentralService.isConfigured()) {
-        return res.json({
+        res.json({
           status: "not_configured",
           isConfigured: false,
           url: null,
           message: "MeshCentral is not configured. Set MESHCENTRAL_URL plus credentials.",
         });
+        return;
       }
       const meshClient = getMeshCentralClient();
       const isAuthenticated = meshClient ? await meshClient.authenticate() : false;
@@ -1957,7 +2086,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const devices = await meshCentralService.getDevices();
       const scope = await getStaffAssignmentScope(req);
-      if (scope.unrestricted) return res.json(devices);
+      if (scope.unrestricted) {
+        res.json(devices);
+        return;
+      }
       const localDevices = (await storage.getDevices()).filter((device) =>
         device.meshNodeId && canSeeClient(scope, device.clientId)
       );
@@ -1973,15 +2105,20 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.post("/api/meshcentral/sync", async (req, res) => {
     try {
       const scope = await getStaffAssignmentScope(req);
-      if (!scope.unrestricted) return res.status(403).json({ error: "Administrator access required" });
+      if (!scope.unrestricted) {
+        res.status(403).json({ error: "Administrator access required" });
+        return;
+      }
       const result = await meshCentralService.syncDevices();
       if (!result.configured) {
-        return res.status(503).json({
+        res.status(503).json({
           error: "MeshCentral is not configured (set MESHCENTRAL_URL plus credentials).",
         });
+        return;
       }
       if (result.error) {
-        return res.status(502).json({ error: result.error });
+        res.status(502).json({ error: result.error });
+        return;
       }
       res.json(result);
     } catch (error) {
@@ -2016,7 +2153,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const body = req.body ?? {};
       if (!body.integrationType) {
-        return res.status(400).json({ error: "integrationType is required" });
+        res.status(400).json({ error: "integrationType is required" });
+        return;
       }
       const integration = await storage.createHelpdeskIntegration({
         clientId: body.clientId ?? null,
@@ -2038,7 +2176,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const id = parseInt(req.params.id, 10);
       const integration = await storage.updateHelpdeskIntegration(id, req.body ?? {});
-      if (!integration) return res.status(404).json({ error: "Integration not found" });
+      if (!integration) {
+        res.status(404).json({ error: "Integration not found" });
+        return;
+      }
       res.json(integration);
     } catch (error) {
       res.status(500).json({ error: "Failed to update integration" });
@@ -2049,7 +2190,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const id = parseInt(req.params.id, 10);
       const ok = await storage.deleteHelpdeskIntegration(id);
-      if (!ok) return res.status(404).json({ error: "Integration not found" });
+      if (!ok) {
+        res.status(404).json({ error: "Integration not found" });
+        return;
+      }
       res.status(204).end();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete integration" });
@@ -2063,7 +2207,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const alert = await storage.getAlert(id);
       const scope = await getStaffAssignmentScope(req);
       if (!alert || !(await canSeeAlert(scope, alert))) {
-        return res.status(404).json({ error: "Alert not found" });
+        res.status(404).json({ error: "Alert not found" });
+        return;
       }
       // Mark alert as resolved instead of deleting
       const updatedAlert = await storage.updateAlert(id, { status: "resolved", resolvedAt: new Date() });
@@ -2079,7 +2224,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const ticket = await storage.getTicket(id);
       const scope = await getStaffAssignmentScope(req);
       if (!ticket || !canSeeClient(scope, ticket.clientId)) {
-        return res.status(404).json({ error: "Ticket not found" });
+        res.status(404).json({ error: "Ticket not found" });
+        return;
       }
       // Mark ticket as closed instead of deleting
       const updatedTicket = await storage.updateTicket(id, { status: "closed", updatedAt: new Date() });
@@ -2095,18 +2241,23 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const client = await storage.getClient(id);
       const scope = await getStaffAssignmentScope(req);
       if (!client || !canSeeClient(scope, id)) {
-        return res.status(404).json({ error: "Client not found" });
+        res.status(404).json({ error: "Client not found" });
+        return;
       }
       try {
         const ok = await storage.deleteClient(id);
-        if (!ok) return res.status(404).json({ error: "Client not found" });
+        if (!ok) {
+          res.status(404).json({ error: "Client not found" });
+          return;
+        }
         res.status(200).json({ message: "Client deleted", id });
       } catch (err: any) {
         // Foreign-key violation: client still has devices / tickets / contacts.
         if (err?.code === "23503" || /foreign key|violates/i.test(err?.message ?? "")) {
-          return res.status(409).json({
+          res.status(409).json({
             error: "Cannot delete client: dependent records exist (devices, tickets, or emergency contacts). Reassign or remove them first.",
           });
+          return;
         }
         throw err;
       }
@@ -2121,7 +2272,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const scan = await storage.updateNetworkScan(id, req.body);
       if (!scan) {
-        return res.status(404).json({ error: "Network scan not found" });
+        res.status(404).json({ error: "Network scan not found" });
+        return;
       }
       res.json(scan);
     } catch (error) {
@@ -2133,11 +2285,13 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const id = parseInt(req.params.id);
       if (Number.isNaN(id)) {
-        return res.status(400).json({ error: "Invalid network scan id" });
+        res.status(400).json({ error: "Invalid network scan id" });
+        return;
       }
       const deleted = await storage.deleteNetworkScan(id);
       if (!deleted) {
-        return res.status(404).json({ error: "Network scan not found" });
+        res.status(404).json({ error: "Network scan not found" });
+        return;
       }
       res.json({ success: true });
     } catch (error) {
@@ -2150,7 +2304,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const script = await storage.getAutomationScript(id);
       if (!script) {
-        return res.status(404).json({ error: "Script not found" });
+        res.status(404).json({ error: "Script not found" });
+        return;
       }
       // Mark script as inactive instead of deleting
       const updatedScript = await storage.updateAutomationScript(id, { isActive: false });
@@ -2188,17 +2343,19 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.get("/api/download/agent", publicReadLimiter, async (req, res) => {
     const platform = String(req.query.platform || "windows").toLowerCase();
     if (!["windows", "mac", "linux"].includes(platform)) {
-      return res.status(400).json({ error: "Unknown platform" });
+      res.status(400).json({ error: "Unknown platform" });
+      return;
     }
     try {
       const url = await meshCentralService.getAgentDownloadUrl(
         platform as "windows" | "mac" | "linux",
       );
       if (!url) {
-        return res.status(503).json({
+        res.status(503).json({
           error:
             "The remote support download isn't available right now. Please call us at 954-637-7300 and we'll connect you.",
         });
+        return;
       }
       res.redirect(302, url);
     } catch (error) {
@@ -2211,7 +2368,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const { deviceId, sessionType } = req.body;
       const localDevice = (await storage.getDevices()).find((device) => device.meshNodeId === String(deviceId));
       if (!localDevice || !(await canAccessAssignedDevice(req, localDevice.id))) {
-        return res.status(404).json({ error: "Device not found" });
+        res.status(404).json({ error: "Device not found" });
+        return;
       }
       const sessionUrl = await meshCentralService.createRemoteSession(localDevice.meshNodeId, sessionType);
       if (sessionUrl) {
@@ -2267,7 +2425,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const intake = await storage.getCsdIntake(parseInt(req.params.id));
       if (!intake) {
-        return res.status(404).json({ error: "Intake record not found" });
+        res.status(404).json({ error: "Intake record not found" });
+        return;
       }
       res.json(intake);
     } catch (error) {
@@ -2277,45 +2436,74 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
 
   app.get("/api/intake/:id/email-history", async (req, res) => {
     const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!/^[1-9]\d*$/.test(rawId)) return res.status(404).json({ message: "Service request not found" });
+    if (!/^[1-9]\d*$/.test(rawId)) {
+      res.status(404).json({ message: "Service request not found" });
+      return;
+    }
     const intakeId = Number(rawId);
-    if (!Number.isSafeInteger(intakeId)) return res.status(404).json({ message: "Service request not found" });
+    if (!Number.isSafeInteger(intakeId)) {
+      res.status(404).json({ message: "Service request not found" });
+      return;
+    }
     try {
       const intake = await storage.getCsdIntake(intakeId);
-      if (!intake) return res.status(404).json({ message: "Service request not found" });
+      if (!intake) {
+        res.status(404).json({ message: "Service request not found" });
+        return;
+      }
       const attempts = await listIntakeEmailAttempts(intakeId);
-      return res.json({ attempts });
+      res.json({ attempts });
+      return;
     } catch {
       req.log.error({ intakeId }, "Service request email history could not be fetched");
-      return res.status(500).json({ message: "Could not fetch service request email history" });
+      res.status(500).json({ message: "Could not fetch service request email history" });
+      return;
     }
   });
 
   app.post("/api/intake/:id/email", staffIntakeEmailLimiter, async (req, res) => {
     const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!/^[1-9]\d*$/.test(rawId)) return res.status(404).json({ message: "Service request not found" });
+    if (!/^[1-9]\d*$/.test(rawId)) {
+      res.status(404).json({ message: "Service request not found" });
+      return;
+    }
     const parsed = SendIntakeEmailBody.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ message: "Enter a valid subject, message, and recipient email" });
+    if (!parsed.success) {
+      res.status(400).json({ message: "Enter a valid subject, message, and recipient email" });
+      return;
+    }
     const subject = parsed.data.subject.trim();
     const body = parsed.data.body.trim();
-    if (!subject || !body) return res.status(400).json({ message: "Subject and message are required" });
+    if (!subject || !body) {
+      res.status(400).json({ message: "Subject and message are required" });
+      return;
+    }
 
     const intakeId = Number(rawId);
-    if (!Number.isSafeInteger(intakeId)) return res.status(404).json({ message: "Service request not found" });
+    if (!Number.isSafeInteger(intakeId)) {
+      res.status(404).json({ message: "Service request not found" });
+      return;
+    }
     try {
       const intake = await storage.getCsdIntake(intakeId);
-      if (!intake) return res.status(404).json({ message: "Service request not found" });
+      if (!intake) {
+        res.status(404).json({ message: "Service request not found" });
+        return;
+      }
       const recipient = intake.emailAddress?.trim();
       if (!recipient || !z.email().safeParse(recipient).success) {
-        return res.status(400).json({ message: "This service request has no valid customer email address" });
+        res.status(400).json({ message: "This service request has no valid customer email address" });
+        return;
       }
       if (recipient.toLowerCase() !== parsed.data.expectedEmail.trim().toLowerCase()) {
-        return res.status(409).json({ message: "The customer's email changed. Refresh the service request before sending." });
+        res.status(409).json({ message: "The customer's email changed. Refresh the service request before sending." });
+        return;
       }
       const html = body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/\n/g, "<br>");
       if (!req.dbUser?.id) {
-        return res.status(401).json({ message: "Authentication required" });
+        res.status(401).json({ message: "Authentication required" });
+        return;
       }
       const senderName =
         [req.dbUser.firstName, req.dbUser.lastName]
@@ -2334,26 +2522,31 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       );
       if (!submission.submitted) {
         req.log.info({ intakeId, status: submission.status }, "Service request email submission did not succeed");
-        return res.status(502).json({
+        res.status(502).json({
           message: submission.status === "rejected"
             ? "Email could not be submitted. Check delivery before retrying."
             : "Email submission outcome is uncertain. Check delivery before retrying.",
         });
+        return;
       }
       req.log.info({ intakeId }, "Service request email submitted to provider");
-      return res.json({ submitted: true });
+      res.json({ submitted: true });
+      return;
     } catch (error) {
       if (error instanceof IntakeEmailAuditWriteError) {
         req.log.error({ intakeId, stage: error.stage }, "Service request email audit could not be recorded");
         if (error.stage === "create") {
-          return res.status(500).json({ message: "Email was not sent because its audit could not be recorded." });
+          res.status(500).json({ message: "Email was not sent because its audit could not be recorded." });
+          return;
         }
-        return res.status(502).json({
+        res.status(502).json({
           message: "Email submission status could not be recorded. Check delivery before retrying.",
         });
+        return;
       }
       req.log.error({ intakeId }, "Service request email could not be prepared");
-      return res.status(500).json({ message: "Could not send this email right now" });
+      res.status(500).json({ message: "Could not send this email right now" });
+      return;
     }
   });
 
@@ -2362,7 +2555,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const intake = await storage.updateCsdIntake(id, req.body);
       if (!intake) {
-        return res.status(404).json({ error: "Intake record not found" });
+        res.status(404).json({ error: "Intake record not found" });
+        return;
       }
       res.json(intake);
     } catch (error) {
@@ -2374,11 +2568,13 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const id = parseInt(req.params.id);
       if (Number.isNaN(id)) {
-        return res.status(400).json({ error: "Invalid intake id" });
+        res.status(400).json({ error: "Invalid intake id" });
+        return;
       }
       const deleted = await storage.deleteCsdIntake(id);
       if (!deleted) {
-        return res.status(404).json({ error: "Intake record not found" });
+        res.status(404).json({ error: "Intake record not found" });
+        return;
       }
       res.json({ success: true });
     } catch (error) {
@@ -2449,7 +2645,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const contact = await storage.getCrmContact(parseInt(req.params.id));
       const scope = await getStaffAssignmentScope(req);
       if (!contact || !canSeeContact(scope, contact.id)) {
-        return res.status(404).json({ error: "Contact not found" });
+        res.status(404).json({ error: "Contact not found" });
+        return;
       }
       res.json({ ...contact, canEdit: canEditContact(scope, contact.id) });
     } catch (error) {
@@ -2460,18 +2657,26 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.post("/api/crm/contacts", async (req, res) => {
     try {
       const normalized = normalizeOptionalClientId(req.body?.clientId, Object.prototype.hasOwnProperty.call(req.body ?? {}, "clientId"));
-      if (normalized.kind === "invalid") return res.status(400).json({ error: normalized.message });
+      if (normalized.kind === "invalid") {
+        res.status(400).json({ error: normalized.message });
+        return;
+      }
       const contactData = insertCrmContactSchema.parse({ ...req.body, clientId: normalized.kind === "id" ? normalized.clientId : null });
       if (contactData.clientId != null && !(await storage.getClient(contactData.clientId))) {
-        return res.status(400).json({ error: "Client account not found" });
+        res.status(400).json({ error: "Client account not found" });
+        return;
       }
       const scope = await getStaffAssignmentScope(req);
-      if (!scope.unrestricted) return res.status(403).json({ error: "Administrator access required to create contacts" });
+      if (!scope.unrestricted) {
+        res.status(403).json({ error: "Administrator access required to create contacts" });
+        return;
+      }
       const contact = await storage.createCrmContact(contactData);
       res.status(201).json({ ...contact, canEdit: true });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid contact data", details: error.issues });
+        res.status(400).json({ error: "Invalid contact data", details: error.issues });
+        return;
       }
       res.status(500).json({ error: "Failed to create contact" });
     }
@@ -2482,20 +2687,34 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const existing = await storage.getCrmContact(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !canSeeContact(scope, existing.id)) return res.status(404).json({ error: "Contact not found" });
-      if (!canEditContact(scope, existing.id)) return res.status(403).json({ error: "Contact edit assignment required" });
+      if (!existing || !canSeeContact(scope, existing.id)) {
+        res.status(404).json({ error: "Contact not found" });
+        return;
+      }
+      if (!canEditContact(scope, existing.id)) {
+        res.status(403).json({ error: "Contact edit assignment required" });
+        return;
+      }
       const update = { ...req.body };
       const normalized = normalizeOptionalClientId(update.clientId, Object.prototype.hasOwnProperty.call(update, "clientId"));
-      if (normalized.kind === "invalid") return res.status(400).json({ error: normalized.message });
+      if (normalized.kind === "invalid") {
+        res.status(400).json({ error: normalized.message });
+        return;
+      }
       if (normalized.kind === "unlink") update.clientId = null;
       if (normalized.kind === "id") update.clientId = normalized.clientId;
       if (update.clientId != null && !(await storage.getClient(update.clientId))) {
-        return res.status(400).json({ error: "Client account not found" });
+        res.status(400).json({ error: "Client account not found" });
+        return;
       }
-      if (!canSeeClient(scope, update.clientId ?? existing.clientId)) return res.status(403).json({ error: "Customer assignment required" });
+      if (!canSeeClient(scope, update.clientId ?? existing.clientId)) {
+        res.status(403).json({ error: "Customer assignment required" });
+        return;
+      }
       const contact = await storage.updateCrmContact(id, update);
       if (!contact) {
-        return res.status(404).json({ error: "Contact not found" });
+        res.status(404).json({ error: "Contact not found" });
+        return;
       }
       res.json(contact);
     } catch (error) {
@@ -2509,20 +2728,34 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const existing = await storage.getCrmContact(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !canSeeContact(scope, existing.id)) return res.status(404).json({ error: "Contact not found" });
-      if (!canEditContact(scope, existing.id)) return res.status(403).json({ error: "Contact edit assignment required" });
+      if (!existing || !canSeeContact(scope, existing.id)) {
+        res.status(404).json({ error: "Contact not found" });
+        return;
+      }
+      if (!canEditContact(scope, existing.id)) {
+        res.status(403).json({ error: "Contact edit assignment required" });
+        return;
+      }
       const update = { ...req.body };
       const normalized = normalizeOptionalClientId(update.clientId, Object.prototype.hasOwnProperty.call(update, "clientId"));
-      if (normalized.kind === "invalid") return res.status(400).json({ error: normalized.message });
+      if (normalized.kind === "invalid") {
+        res.status(400).json({ error: normalized.message });
+        return;
+      }
       if (normalized.kind === "unlink") update.clientId = null;
       if (normalized.kind === "id") update.clientId = normalized.clientId;
       if (update.clientId != null && !(await storage.getClient(update.clientId))) {
-        return res.status(400).json({ error: "Client account not found" });
+        res.status(400).json({ error: "Client account not found" });
+        return;
       }
-      if (!canSeeClient(scope, update.clientId ?? existing.clientId)) return res.status(403).json({ error: "Customer assignment required" });
+      if (!canSeeClient(scope, update.clientId ?? existing.clientId)) {
+        res.status(403).json({ error: "Customer assignment required" });
+        return;
+      }
       const contact = await storage.updateCrmContact(id, update);
       if (!contact) {
-        return res.status(404).json({ error: "Contact not found" });
+        res.status(404).json({ error: "Contact not found" });
+        return;
       }
       res.json(contact);
     } catch (error) {
@@ -2533,19 +2766,22 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.delete("/api/crm/contacts/:id", async (req, res) => {
     try {
       if (!isAdminUser(req)) {
-        return res.status(403).json({ error: "Administrator access required" });
+        res.status(403).json({ error: "Administrator access required" });
+        return;
       }
       const id = parseInt(req.params.id);
       const ok = await storage.deleteCrmContact(id);
       if (!ok) {
-        return res.status(404).json({ error: "Contact not found" });
+        res.status(404).json({ error: "Contact not found" });
+        return;
       }
       res.json({ success: true });
     } catch (error) {
       if (error instanceof ContactDeletionConflictError) {
-        return res.status(409).json({
+        res.status(409).json({
           error: "Cannot delete contact: invoice or booking history requires this contact.",
         });
+        return;
       }
       req.log.error({ err: error }, "Delete contact failed");
       res.status(500).json({ error: "Failed to delete contact" });
@@ -2556,18 +2792,26 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const { fullName, mobilePhone, email, ...rest } = req.body;
       const normalized = normalizeOptionalClientId(rest.clientId, Object.prototype.hasOwnProperty.call(req.body ?? {}, "clientId"));
-      if (normalized.kind === "invalid") return res.status(400).json({ error: normalized.message });
+      if (normalized.kind === "invalid") {
+        res.status(400).json({ error: normalized.message });
+        return;
+      }
       rest.clientId = normalized.kind === "id" ? normalized.clientId : null;
       if (rest.clientId != null && !(await storage.getClient(rest.clientId))) {
-        return res.status(400).json({ error: "Client account not found" });
+        res.status(400).json({ error: "Client account not found" });
+        return;
       }
       const scope = await getStaffAssignmentScope(req);
-      if (!canSeeClient(scope, rest.clientId)) return res.status(403).json({ error: "Customer assignment required" });
+      if (!canSeeClient(scope, rest.clientId)) {
+        res.status(403).json({ error: "Customer assignment required" });
+        return;
+      }
       
       // Try to find existing contact by phone or email
       let contact = await storage.getCrmContactByPhoneOrEmail(mobilePhone, email);
       if (contact && !canSeeClient(scope, contact.clientId)) {
-        return res.status(404).json({ error: "Contact not found" });
+        res.status(404).json({ error: "Contact not found" });
+        return;
       }
       
       if (!contact) {
@@ -2579,7 +2823,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       res.json(contact);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid contact data", details: error.issues });
+        res.status(400).json({ error: "Invalid contact data", details: error.issues });
+        return;
       }
       res.status(500).json({ error: "Failed to find or create contact" });
     }
@@ -2609,7 +2854,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const lead = await storage.getCrmLead(parseInt(req.params.id));
       if (!lead) {
-        return res.status(404).json({ error: "Lead not found" });
+        res.status(404).json({ error: "Lead not found" });
+        return;
       }
       res.json(lead);
     } catch (error) {
@@ -2638,13 +2884,17 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.post("/api/crm/leads", async (req, res) => {
     try {
       const contact = await resolveLeadContactId(req.body);
-      if (!contact.ok) return res.status(400).json({ error: contact.message });
+      if (!contact.ok) {
+        res.status(400).json({ error: contact.message });
+        return;
+      }
       const leadData = insertCrmLeadSchema.parse({ ...req.body, contactId: contact.contactId ?? null });
       const lead = await storage.createCrmLead(leadData);
       res.status(201).json(lead);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid lead data", details: error.issues });
+        res.status(400).json({ error: "Invalid lead data", details: error.issues });
+        return;
       }
       logger.error(`[crm] create lead failed: ${(error as Error)?.message ?? error}`);
       res.status(500).json({ error: "Failed to create lead" });
@@ -2657,11 +2907,15 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const update = { ...req.body };
       const contact = await resolveLeadContactId(req.body);
-      if (!contact.ok) return res.status(400).json({ error: contact.message });
+      if (!contact.ok) {
+        res.status(400).json({ error: contact.message });
+        return;
+      }
       if (contact.contactId !== undefined) update.contactId = contact.contactId;
       const lead = await storage.updateCrmLead(id, update);
       if (!lead) {
-        return res.status(404).json({ error: "Lead not found" });
+        res.status(404).json({ error: "Lead not found" });
+        return;
       }
       res.json(lead);
     } catch (error) {
@@ -2726,7 +2980,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const job = await storage.getCrmJob(parseInt(req.params.id));
       const scope = await getStaffAssignmentScope(req);
       if (!job || !(await canSeeJob(scope, job))) {
-        return res.status(404).json({ error: "Job not found" });
+        res.status(404).json({ error: "Job not found" });
+        return;
       }
       res.json(await withJobAccount(job));
     } catch (error) {
@@ -2741,17 +2996,20 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const jobData = insertCrmJobSchema.parse({ ...req.body, jobNumber });
       const contact = jobData.contactId == null ? null : await storage.getCrmContact(jobData.contactId);
       if (jobData.contactId != null && !contact) {
-        return res.status(400).json({ error: "CRM contact not found" });
+        res.status(400).json({ error: "CRM contact not found" });
+        return;
       }
       const scope = await getStaffAssignmentScope(req);
       if (!scope.unrestricted && (!contact || !canSeeClient(scope, contact.clientId))) {
-        return res.status(403).json({ error: "Customer assignment required" });
+        res.status(403).json({ error: "Customer assignment required" });
+        return;
       }
       const job = await storage.createCrmJob(jobData);
       res.status(201).json(await withJobAccount(job));
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid job data", details: error.issues });
+        res.status(400).json({ error: "Invalid job data", details: error.issues });
+        return;
       }
       res.status(500).json({ error: "Failed to create job" });
     }
@@ -2763,17 +3021,25 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const existing = await storage.getCrmJob(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !(await canSeeJob(scope, existing))) return res.status(404).json({ error: "Job not found" });
+      if (!existing || !(await canSeeJob(scope, existing))) {
+        res.status(404).json({ error: "Job not found" });
+        return;
+      }
       if (req.body?.contactId != null) {
         const destination = await storage.getCrmContact(Number(req.body.contactId));
-        if (!destination) return res.status(400).json({ error: "CRM contact not found" });
+        if (!destination) {
+          res.status(400).json({ error: "CRM contact not found" });
+          return;
+        }
         if (Number(req.body.contactId) !== existing.contactId && !canSeeClient(scope, destination.clientId)) {
-          return res.status(403).json({ error: "Customer assignment required" });
+          res.status(403).json({ error: "Customer assignment required" });
+          return;
         }
       }
       const job = await storage.updateCrmJob(id, req.body);
       if (!job) {
-        return res.status(404).json({ error: "Job not found" });
+        res.status(404).json({ error: "Job not found" });
+        return;
       }
       res.json(await withJobAccount(job));
     } catch (error) {
@@ -2843,7 +3109,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const interaction = await storage.getCrmInteraction(parseInt(req.params.id));
       const scope = await getStaffAssignmentScope(req);
       if (!interaction || !canSeeContact(scope, await interactionContactId(interaction))) {
-        return res.status(404).json({ error: "Interaction not found" });
+        res.status(404).json({ error: "Interaction not found" });
+        return;
       }
       res.json(interaction);
     } catch (error) {
@@ -2856,13 +3123,20 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const interactionData = insertCrmInteractionSchema.parse(req.body);
       const scope = await getStaffAssignmentScope(req);
       const contactId = await interactionContactId(interactionData);
-      if (!canSeeContact(scope, contactId)) return res.status(404).json({ error: "Contact not found" });
-      if (!canEditContact(scope, contactId)) return res.status(403).json({ error: "Contact edit assignment required" });
+      if (!canSeeContact(scope, contactId)) {
+        res.status(404).json({ error: "Contact not found" });
+        return;
+      }
+      if (!canEditContact(scope, contactId)) {
+        res.status(403).json({ error: "Contact edit assignment required" });
+        return;
+      }
       const interaction = await storage.createCrmInteraction(interactionData);
       res.status(201).json(interaction);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid interaction data", details: error.issues });
+        res.status(400).json({ error: "Invalid interaction data", details: error.issues });
+        return;
       }
       res.status(500).json({ error: "Failed to create interaction" });
     }
@@ -2888,7 +3162,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const scope = await getStaffAssignmentScope(req);
       const visible = log && await canSeeServiceLog(scope, log);
       if (!visible) {
-        return res.status(404).json({ error: "Service log not found" });
+        res.status(404).json({ error: "Service log not found" });
+        return;
       }
       res.json(log);
     } catch (error) {
@@ -2900,12 +3175,16 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const logData = insertServiceLogSchema.parse(req.body);
       const scope = await getStaffAssignmentScope(req);
-      if (!(await canWriteServiceLog(scope, logData))) return res.status(403).json({ error: "Customer or job assignment required" });
+      if (!(await canWriteServiceLog(scope, logData))) {
+        res.status(403).json({ error: "Customer or job assignment required" });
+        return;
+      }
       const log = await storage.createServiceLog(logData);
       res.status(201).json(log);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid service log data", details: error.issues });
+        res.status(400).json({ error: "Invalid service log data", details: error.issues });
+        return;
       }
       res.status(500).json({ error: "Failed to create service log" });
     }
@@ -2916,11 +3195,18 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const existing = await storage.getServiceLog(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !(await canSeeServiceLog(scope, existing))) return res.status(404).json({ error: "Service log not found" });
-      if (!(await canWriteServiceLog(scope, { ...existing, ...req.body }))) return res.status(403).json({ error: "Customer or job assignment required" });
+      if (!existing || !(await canSeeServiceLog(scope, existing))) {
+        res.status(404).json({ error: "Service log not found" });
+        return;
+      }
+      if (!(await canWriteServiceLog(scope, { ...existing, ...req.body }))) {
+        res.status(403).json({ error: "Customer or job assignment required" });
+        return;
+      }
       const log = await storage.updateServiceLog(id, req.body);
       if (!log) {
-        return res.status(404).json({ error: "Service log not found" });
+        res.status(404).json({ error: "Service log not found" });
+        return;
       }
       res.json(log);
     } catch (error) {
@@ -2932,14 +3218,19 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const id = parseInt(req.params.id);
       if (Number.isNaN(id)) {
-        return res.status(400).json({ error: "Invalid service log id" });
+        res.status(400).json({ error: "Invalid service log id" });
+        return;
       }
       const existing = await storage.getServiceLog(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !(await canSeeServiceLog(scope, existing))) return res.status(404).json({ error: "Service log not found" });
+      if (!existing || !(await canSeeServiceLog(scope, existing))) {
+        res.status(404).json({ error: "Service log not found" });
+        return;
+      }
       const deleted = await storage.deleteServiceLog(id);
       if (!deleted) {
-        return res.status(404).json({ error: "Service log not found" });
+        res.status(404).json({ error: "Service log not found" });
+        return;
       }
       res.json({ success: true });
     } catch (error) {
@@ -2951,7 +3242,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const contact = await storage.getCrmContact(parseInt(req.params.contactId));
       const scope = await getStaffAssignmentScope(req);
-      if (!contact || !canSeeClient(scope, contact.clientId)) return res.status(404).json({ error: "Contact not found" });
+      if (!contact || !canSeeClient(scope, contact.clientId)) {
+        res.status(404).json({ error: "Contact not found" });
+        return;
+      }
       const logs = await storage.getServiceLogsByContact(parseInt(req.params.contactId));
       res.json((await Promise.all(logs.map(async (log) => await canSeeServiceLog(scope, log) ? log : null))).filter(Boolean));
     } catch (error) {
@@ -2963,7 +3257,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const job = await storage.getCrmJob(parseInt(req.params.jobId));
       const scope = await getStaffAssignmentScope(req);
-      if (!job || !(await canSeeJob(scope, job))) return res.status(404).json({ error: "Job not found" });
+      if (!job || !(await canSeeJob(scope, job))) {
+        res.status(404).json({ error: "Job not found" });
+        return;
+      }
       const logs = await storage.getServiceLogsByJob(parseInt(req.params.jobId));
       res.json((await Promise.all(logs.map(async (log) => await canSeeServiceLog(scope, log) ? log : null))).filter(Boolean));
     } catch (error) {
@@ -3038,11 +3335,12 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const validated = intakeSchema.safeParse(req.body);
       if (!validated.success) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: "Invalid intake data",
           details: validated.error.flatten().fieldErrors,
         });
+        return;
       }
       const {
         full_name,
@@ -3071,17 +3369,19 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const normalizedEmail = normalizeIntakeEmail(email);
       const normalizedPhone = normalizeIntakePhone(mobile_phone);
       if (mobile_phone?.trim() && !normalizedPhone) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: "Mobile phone must be a valid phone number",
         });
+        return;
       }
       let devicePhoto: ReturnType<typeof decodeCustomerPhoto> | null = null;
       if (validated.data.device_photo) {
         try {
           devicePhoto = decodeCustomerPhoto(validated.data.device_photo);
         } catch (error) {
-          return res.status(400).json({ success: false, error: (error as Error).message });
+          res.status(400).json({ success: false, error: (error as Error).message });
+          return;
         }
       }
       const phoneDigits = normalizedPhoneDigits(normalizedPhone);
@@ -3090,10 +3390,11 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
 
       // Validate required fields
       if (!full_name || (!normalizedPhone && !normalizedEmail) || !service_type || !device_type || !problem_description) {
-        return res.status(400).json({ 
+        res.status(400).json({ 
           success: false, 
           error: "Missing required fields: full_name, mobile_phone OR email, service_type, device_type, problem_description" 
         });
+        return;
       }
 
       const brandModel = device_brand && device_model 
@@ -3324,7 +3625,9 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
             [intakeValues.customerName, intakeValues.phoneNumber, intakeValues.emailAddress,
               intakeValues.contactPreference, intakeValues.serviceType, intakeValues.deviceType, intakeValues.deviceBrandModel,
               intakeValues.operatingSystem, intakeValues.problemDescription, intakeValues.howDidYouHear,
-              intakeValues.isFromActiveCall, intakeValues.callNotes, attribution.source, voiceIntake ? "voice_intake" : null,
+              intakeValues.isFromActiveCall, intakeValues.callNotes, attribution.source,
+              // The voice tag keeps precedence: the board and Leads views key off it.
+              voiceIntake ? "voice_intake" : normalizeUtmCampaign(validated.data.utm_campaign),
               req.ip || null, req.get("user-agent") || null, req.get("referer") || null],
           );
           const intakeRecordId = Number(intakeRecord.rows[0].id);
@@ -3389,6 +3692,19 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         }, `intake-${lead.id}`);
       }
       if (!crm.replayed) publishPipelineEvent({ type: "deal_created", dealId: deal.id, stage: deal.stage });
+      if (!crm.replayed && crm.intakeRecordId != null && validated.data.referral_code != null) {
+        // Best effort and idempotent per intake: never fails the request.
+        await recordIntakeReferral({
+          code: validated.data.referral_code,
+          intakeRecordId: crm.intakeRecordId,
+          leadId: crm.leadId,
+          contactId: contact?.id ?? null,
+          existingCustomer: crm.contactStatus === "reused",
+          friendName: full_name,
+          friendEmail: normalizedEmail,
+          friendPhone: normalizedPhone,
+        });
+      }
 
       // Auto-create dispatch records so every intake lands on the work boards
       // without a manual conversion step: a CRM Job (work order) and a Helpdesk
@@ -3645,7 +3961,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const intakeId = parseInt(req.params.id, 10);
       if (!Number.isSafeInteger(intakeId) || intakeId < 1) {
-        return res.status(400).json({ error: "Invalid intake id" });
+        res.status(400).json({ error: "Invalid intake id" });
+        return;
       }
       const { rows } = await pool.query(
         `SELECT s.contact_id, s.contact_status, s.client_id, s.client_status,
@@ -3681,7 +3998,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         );
         row = fallback.rows[0];
       }
-      if (!row) return res.json({ linked: false });
+      if (!row) {
+        res.json({ linked: false });
+        return;
+      }
       res.json({
         linked: true,
         contact: row.contact_id ? { id: Number(row.contact_id), status: row.contact_status } : null,
@@ -3718,9 +4038,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const authUrl = googleContactsService.getAuthUrl();
       if (!authUrl) {
-        return res.status(400).json({ 
+        res.status(400).json({ 
           error: "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET secrets first." 
         });
+        return;
       }
       res.json({ authUrl });
     } catch (error) {
@@ -3732,7 +4053,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const code = req.query.code as string;
       if (!code) {
-        return res.status(400).json({ error: "No authorization code provided" });
+        res.status(400).json({ error: "No authorization code provided" });
+        return;
       }
       
       const tokens = await googleContactsService.handleAuthCallback(code);
@@ -3773,10 +4095,12 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const contact = await storage.getCrmContact(contactId);
       const scope = await getStaffAssignmentScope(req);
       if (!contact || !canSeeContact(scope, contactId)) {
-        return res.status(404).json({ error: "Contact not found" });
+        res.status(404).json({ error: "Contact not found" });
+        return;
       }
       if (!canEditContact(scope, contactId)) {
-        return res.status(403).json({ error: "Contact edit assignment required" });
+        res.status(403).json({ error: "Contact edit assignment required" });
+        return;
       }
       
       const result = await googleContactsService.createContact({
@@ -3856,9 +4180,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const status = googleContactsService.getStatus();
       if (!status.configured) {
-        return res.status(400).json({ 
+        res.status(400).json({ 
           error: "Google Contacts not configured. Complete OAuth setup first." 
         });
+        return;
       }
 
       const googleContacts = await googleContactsService.listAllContacts();
@@ -3990,14 +4315,16 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.post("/api/aria/support-chat", supportChatLimiter, async (req, res) => {
     try {
       if (!ariaService.getStatus().configured) {
-        return res.status(503).json({
+        res.status(503).json({
           error: "The chat assistant is unavailable right now. Please call (954) 637-7300.",
         });
+        return;
       }
 
       const raw = (req.body?.messages ?? []) as unknown;
       if (!Array.isArray(raw) || raw.length === 0) {
-        return res.status(400).json({ error: "messages is required" });
+        res.status(400).json({ error: "messages is required" });
+        return;
       }
 
       // Sanitize: keep only the recent turns, cap length, valid roles/content.
@@ -4010,7 +4337,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         .filter((m) => m.content.trim().length > 0);
 
       if (messages.length === 0) {
-        return res.status(400).json({ error: "Message cannot be empty" });
+        res.status(400).json({ error: "Message cannot be empty" });
+        return;
       }
 
       const result = await ariaService.supportChat(messages);
@@ -4288,13 +4616,15 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const { text, voice } = req.body;
 
       if (!text || typeof text !== 'string') {
-        return res.status(400).json({ error: "text is required" });
+        res.status(400).json({ error: "text is required" });
+        return;
       }
 
       const audioBuffer = await ariaService.textToSpeech(text, voice || 'nova');
 
       if (!audioBuffer) {
-        return res.status(503).json({ error: "TTS not available" });
+        res.status(503).json({ error: "TTS not available" });
+        return;
       }
 
       res.set({
@@ -4349,7 +4679,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.get("/api/twilio/phone-numbers", async (_req, res) => {
     try {
       const configured = await isTwilioConfigured();
-      if (!configured) return res.json({ configured: false, numbers: [], configuredPhoneNumber: null });
+      if (!configured) {
+        res.json({ configured: false, numbers: [], configuredPhoneNumber: null });
+        return;
+      }
       const { listTwilioSmsNumbers } = await import("../twilio");
       const [numbers, configuredPhoneNumber] = await Promise.all([
         listTwilioSmsNumbers(),
@@ -4632,10 +4965,12 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const client = await pool.connect();
       try {
         const reviews = await reviewDeletedContactPlaceholdersWithRecords(client);
-        return res.json(reviews);
+        res.json(reviews);
+        return;
       } catch (error) {
         console.error("[crm/deleted-contact-placeholders] failed:", (error as Error)?.message);
-        return res.status(500).json({ error: "Failed to load retained deleted contacts" });
+        res.status(500).json({ error: "Failed to load retained deleted contacts" });
+        return;
       } finally {
         client.release();
       }
@@ -4664,7 +4999,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     const { snoozeA2PAlerts } = await import("../a2p-monitor");
     const parsed = snoozeBodySchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: "hours must be a positive number" });
+      res.status(400).json({ error: "hours must be a positive number" });
+      return;
     }
     // Actor was resolved + verified by requireOwner, attached to req.
     const actor = (req as import("express").Request & {
@@ -4756,9 +5092,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     async (req, res) => {
       const parsed = suggestionInputSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res
+        res
           .status(400)
           .json({ error: parsed.error.issues[0]?.message || "Invalid suggestion" });
+        return;
       }
       try {
         const actor = await resolveActor(req);
@@ -4769,13 +5106,14 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
           parsed.data.reasonText,
         );
         if (existing) {
-          return res.json({
+          res.json({
             ok: true,
             id: existing.id,
             duplicate: true,
             message:
               "Thanks — someone already reported this rejection. It's waiting for review.",
           });
+          return;
         }
         const created = await storage.createA2pRejectionSuggestion({
           reasonText: parsed.data.reasonText,
@@ -4827,17 +5165,22 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     async (req, res) => {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) {
-        return res.status(400).json({ error: "Invalid id" });
+        res.status(400).json({ error: "Invalid id" });
+        return;
       }
       const parsed = suggestionUpdateSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res
+        res
           .status(400)
           .json({ error: parsed.error.issues[0]?.message || "Invalid update" });
+        return;
       }
       try {
         const updated = await storage.updateA2pRejectionSuggestion(id, parsed.data);
-        if (!updated) return res.status(404).json({ error: "Not found" });
+        if (!updated) {
+          res.status(404).json({ error: "Not found" });
+          return;
+        }
         res.json(updated);
       } catch (err) {
         console.error(
@@ -4935,13 +5278,15 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       }
       if (!campaign.messageFlow) missing.push("campaign.messageFlow");
       if (missing.length) {
-        return res.status(400).json({ error: "Missing required fields", missing });
+        res.status(400).json({ error: "Missing required fields", missing });
+        return;
       }
 
       const configured = await isTwilioConfigured();
       result.configured = configured;
       if (!configured) {
-        return res.status(400).json({ error: "Twilio is not configured on this account", ...result });
+        res.status(400).json({ error: "Twilio is not configured on this account", ...result });
+        return;
       }
 
       const { getTwilioClient } = await import("../twilio");
@@ -5560,10 +5905,16 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const file = path.join(process.cwd(), ".local", "a2p-last-submission.json");
       const raw = await fs.readFile(file, "utf8");
       const parsed = JSON.parse(raw) as { savedAt?: string; body?: unknown };
-      if (!parsed.body) return res.status(404).json({ error: "no prior submission" });
+      if (!parsed.body) {
+        res.status(404).json({ error: "no prior submission" });
+        return;
+      }
       res.json({ savedAt: parsed.savedAt || null, body: parsed.body });
     } catch (err: any) {
-      if (err?.code === "ENOENT") return res.status(404).json({ error: "no prior submission" });
+      if (err?.code === "ENOENT") {
+        res.status(404).json({ error: "no prior submission" });
+        return;
+      }
       res.status(500).json({ error: err?.message || "failed to read prefill" });
     }
   });
@@ -5571,7 +5922,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.post("/api/twilio/test-sms", async (req, res) => {
     try {
       const { to, body } = req.body ?? {};
-      if (!to || !body) return res.status(400).json({ error: "to and body required" });
+      if (!to || !body) {
+        res.status(400).json({ error: "to and body required" });
+        return;
+      }
       const result = await sendSms(String(to), String(body));
       res.json({ success: true, ...result });
     } catch (err: any) {
@@ -5615,15 +5969,18 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
             .filter(Boolean);
           const targets = parseSmsForwardTargets(parsed.smsForwardNumbers);
           if (submitted.length > 5) {
-            return res.status(400).json({ error: "SMS forwarding supports up to five numbers" });
+            res.status(400).json({ error: "SMS forwarding supports up to five numbers" });
+            return;
           }
           if (targets.length !== submitted.length) {
-            return res.status(400).json({ error: "Forwarding numbers must be valid and unique" });
+            res.status(400).json({ error: "Forwarding numbers must be valid and unique" });
+            return;
           }
           const businessNumber = String(parsed.twilioPhoneNumber || (await getTwilioSettings()).twilioPhoneNumber)
             .replace(/\D/g, "");
           if (targets.some((target) => target.replace(/\D/g, "") === businessNumber)) {
-            return res.status(400).json({ error: "The Twilio business number cannot receive its own forwards" });
+            res.status(400).json({ error: "The Twilio business number cannot receive its own forwards" });
+            return;
           }
           parsed.smsForwardNumbers = targets.join(",");
           if (targets[0]) parsed.smsForwardToNumber = targets[0];
@@ -5651,12 +6008,14 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         try {
           const buf = req.body as Buffer;
           if (!buf || !Buffer.isBuffer(buf) || buf.length === 0) {
-            return res.status(400).json({ error: "No audio data received." });
+            res.status(400).json({ error: "No audio data received." });
+            return;
           }
           // Greetings are short, so keep well under the key-value store's per-value
           // limit (base64 adds ~33% overhead): 1.5 MB of audio is roughly 3–4 minutes.
           if (buf.length > 1.5 * 1024 * 1024) {
-            return res.status(413).json({ error: "Audio file is too large. Please upload an MP3 or WAV under 1.5 MB (a short greeting is plenty)." });
+            res.status(413).json({ error: "Audio file is too large. Please upload an MP3 or WAV under 1.5 MB (a short greeting is plenty)." });
+            return;
           }
           const fileName = (req.headers["x-file-name"] || "").toString().slice(0, 120) || undefined;
           // Resolve a Twilio-playable content type; reject anything that isn't MP3/WAV.
@@ -5673,7 +6032,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
             else if (name.endsWith(".wav")) contentType = "audio/wav";
           }
           if (!contentType) {
-            return res.status(415).json({ error: "Unsupported file type. Please upload an MP3 or WAV audio file." });
+            res.status(415).json({ error: "Unsupported file type. Please upload an MP3 or WAV audio file." });
+            return;
           }
           await setGreetingAudio(buf, contentType, fileName);
           res.json(await getGreetingAudioInfo());
@@ -5695,7 +6055,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     app.get("/api/twilio/voicemails", async (req, res) => {
       try {
         if (!(await canViewVoicemails(req))) {
-          return res.status(403).json({ message: "Voicemail access is disabled for this staff account" });
+          res.status(403).json({ message: "Voicemail access is disabled for this staff account" });
+          return;
         }
         const unreadOnly = req.query.unread === "true";
         const list = await listVoicemails({ unreadOnly });
@@ -5708,7 +6069,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     app.patch("/api/twilio/voicemails/:id", async (req, res) => {
       try {
         if (!(await canViewVoicemails(req))) {
-          return res.status(403).json({ message: "Voicemail access is disabled for this staff account" });
+          res.status(403).json({ message: "Voicemail access is disabled for this staff account" });
+          return;
         }
         const id = parseInt(req.params.id, 10);
         // Whitelist mutable fields — never accept arbitrary patches
@@ -5716,7 +6078,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         const safe: { listened?: boolean } = {};
         if (typeof req.body?.listened === "boolean") safe.listened = req.body.listened;
         const updated = await updateVoicemail(id, safe);
-        if (!updated) return res.status(404).json({ error: "not found" });
+        if (!updated) {
+          res.status(404).json({ error: "not found" });
+          return;
+        }
         res.json(updated);
       } catch (err: any) {
         res.status(400).json({ error: err.message });
@@ -5739,17 +6104,22 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     app.get("/api/twilio/voicemails/:id/audio", async (req, res) => {
       try {
         if (!(await canViewVoicemails(req))) {
-          return res.status(403).json({ message: "Voicemail access is disabled for this staff account" });
+          res.status(403).json({ message: "Voicemail access is disabled for this staff account" });
+          return;
         }
         const id = parseInt(req.params.id, 10);
         const vm = await getVoicemail(id);
-        if (!vm?.recordingUrl) return res.status(404).end();
+        if (!vm?.recordingUrl) {
+          res.status(404).end();
+          return;
+        }
 
         const rawUrl = `${vm.recordingUrl}.mp3`;
         let parsed: URL;
-        try { parsed = new URL(rawUrl); } catch { return res.status(400).end(); }
+        try { parsed = new URL(rawUrl); } catch { res.status(400).end(); return; }
         if (parsed.protocol !== "https:" || parsed.hostname !== "api.twilio.com") {
-          return res.status(400).end();
+          res.status(400).end();
+          return;
         }
 
         // Use the Twilio API key/secret from the Replit connector for Basic auth.
@@ -5759,7 +6129,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         const apiSecret = (client as any).password as string;
         if (!apiKey || !apiSecret) {
           console.error("voicemail audio: missing Twilio API key/secret on client");
-          return res.status(500).end();
+          res.status(500).end();
+          return;
         }
         const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
 
@@ -5770,7 +6141,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
           // "absent" — the caller hung up without leaving a message). Surface
           // that as 404, not 502, so the UI shows a clean "no audio" state
           // instead of looking like a broken server.
-          return res.status(resp.status === 404 ? 404 : 502).end();
+          res.status(resp.status === 404 ? 404 : 502).end();
+          return;
         }
         res.setHeader("Content-Type", "audio/mpeg");
         const reader = resp.body.getReader();
@@ -5822,7 +6194,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         const settings = await getTwilioSettings();
         const configuredBase = canonicalPublicAppBaseUrl(process.env.APP_BASE_URL);
         if (!configuredBase.ok) {
-          return res.status(503).json({ error: configuredBase.error });
+          res.status(503).json({ error: configuredBase.error });
+          return;
         }
         const base = configuredBase.origin;
         const { getTwilioClient } = await import("../twilio");
@@ -5831,7 +6204,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
           phoneNumber: settings.twilioPhoneNumber,
           limit: 1,
         });
-        if (!num) return res.status(404).json({ error: `Twilio number ${settings.twilioPhoneNumber} not found on this account` });
+        if (!num) {
+          res.status(404).json({ error: `Twilio number ${settings.twilioPhoneNumber} not found on this account` });
+          return;
+        }
         const updated = await client.incomingPhoneNumbers(num.sid).update({
           voiceUrl: `${base}/webhooks/voice/incoming`,
           voiceMethod: "POST",
@@ -5919,7 +6295,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     app.get("/api/sms/messages", async (req, res) => {
       try {
         const peer = String(req.query.peer || "");
-        if (!peer) return res.status(400).json({ error: "peer query param required" });
+        if (!peer) {
+          res.status(400).json({ error: "peer query param required" });
+          return;
+        }
         const list = await listSmsMessages({ counterparty: peer, limit: 500 });
         res.json(list.slice().reverse());
       } catch (e: any) {
@@ -5955,17 +6334,28 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       canSeeContact,
       canEditContact,
     });
+    registerBrowserVoiceRoutes(app, {
+      getFromNumber: getTwilioFromPhoneNumber,
+      getContacts: () => storage.getCrmContacts(),
+      canSeeContact,
+      canEditContact,
+      recordCall: upsertCallLog,
+    });
     if (false) {
     app.post("/api/sms/send", async (req, res) => {
       try {
         const { to, body, from } = req.body ?? {};
-        if (!to || !body) return res.status(400).json({ error: "to and body are required" });
+        if (!to || !body) {
+          res.status(400).json({ error: "to and body are required" });
+          return;
+        }
 
         const targetNumber = toValidE164(String(to));
         if (!targetNumber) {
-          return res.status(400).json({
+          res.status(400).json({
             error: "Destination phone number must be a valid E.164 number",
           });
+          return;
         }
         const contacts = await storage.getCrmContacts();
         const matchingContacts = contacts.filter((contact) =>
@@ -5975,17 +6365,23 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         );
         const scope = await getStaffAssignmentScope(req);
         if (matchingContacts.some((contact) => !canSeeContact(scope, contact.id))) {
-          return res.status(404).json({ error: "Contact not found" });
+          res.status(404).json({ error: "Contact not found" });
+          return;
         }
         if (matchingContacts.some((contact) => !canEditContact(scope, contact.id))) {
-          return res.status(403).json({ error: "Contact edit assignment required" });
+          res.status(403).json({ error: "Contact edit assignment required" });
+          return;
         }
         // Explicit unlinked-number policy: approved staff may text numbers that
         // do not resolve to CRM contacts. Pending and suspended staff may not.
         if (matchingContacts.length === 0 && (await getStaffAccess(req)).approvalStatus !== "approved") {
-          return res.status(403).json({ error: "Approved staff access required" });
+          res.status(403).json({ error: "Approved staff access required" });
+          return;
         }
-        if (!isTwilioConfigured()) return res.status(400).json({ error: "Twilio is not configured" });
+        if (!isTwilioConfigured()) {
+          res.status(400).json({ error: "Twilio is not configured" });
+          return;
+        }
 
         const fromNum = from ? String(from).trim() : "";
         if (fromNum && fromNum !== "default") {
@@ -6008,7 +6404,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
             }).catch((error) => {
               console.error("[sms-mirror] failed to queue tracking-number reply:", error);
             });
-            return res.json({ success: true, sid: msg.sid, to: msg.to, from: msg.from, status: msg.status });
+            res.json({ success: true, sid: msg.sid, to: msg.to, from: msg.from, status: msg.status });
+            return;
           }
         }
 
@@ -6032,7 +6429,8 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       try {
         const messageClass = String(req.query.messageClass || "service") as SmsMessageClass;
         if (!["service", "marketing"].includes(messageClass)) {
-          return res.status(400).json({ error: "messageClass must be service or marketing" });
+          res.status(400).json({ error: "messageClass must be service or marketing" });
+          return;
         }
         const scope = await getStaffAssignmentScope(req);
         const contacts = (await storage.getCrmContacts()).filter((contact) => canSeeContact(scope, contact.id));
@@ -6069,13 +6467,29 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         const rawIds = Array.isArray(req.body?.contactIds) ? req.body.contactIds : [];
         const contactIds = [...new Set(rawIds.map(Number).filter(Number.isSafeInteger))];
         if (!["service", "marketing"].includes(messageClass)) {
-          return res.status(400).json({ error: "messageClass must be service or marketing" });
+          res.status(400).json({ error: "messageClass must be service or marketing" });
+          return;
         }
-        if (!body) return res.status(400).json({ error: "Message body is required" });
-        if (body.length > 1600) return res.status(400).json({ error: "Message body is too long" });
-        if (!contactIds.length) return res.status(400).json({ error: "Select at least one contact" });
-        if (contactIds.length > 100) return res.status(400).json({ error: "Bulk sends are limited to 100 contacts" });
-        if (!isTwilioConfigured()) return res.status(400).json({ error: "Twilio is not configured" });
+        if (!body) {
+          res.status(400).json({ error: "Message body is required" });
+          return;
+        }
+        if (body.length > 1600) {
+          res.status(400).json({ error: "Message body is too long" });
+          return;
+        }
+        if (!contactIds.length) {
+          res.status(400).json({ error: "Select at least one contact" });
+          return;
+        }
+        if (contactIds.length > 100) {
+          res.status(400).json({ error: "Bulk sends are limited to 100 contacts" });
+          return;
+        }
+        if (!isTwilioConfigured()) {
+          res.status(400).json({ error: "Twilio is not configured" });
+          return;
+        }
 
         const results: Array<Record<string, unknown>> = [];
         const deliveredPhones = new Set<string>();
@@ -6145,7 +6559,10 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     app.delete("/api/sms/threads/:peer", async (req, res) => {
       try {
         const peer = String(req.params.peer || "");
-        if (!peer) return res.status(400).json({ error: "peer is required" });
+        if (!peer) {
+          res.status(400).json({ error: "peer is required" });
+          return;
+        }
         const count = await deleteSmsConversation(peer);
         res.json({ success: true, deleted: count });
       } catch (e: any) {
@@ -6158,9 +6575,15 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     app.delete("/api/sms/messages/:id", async (req, res) => {
       try {
         const id = parseInt(req.params.id);
-        if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid message id" });
+        if (Number.isNaN(id)) {
+          res.status(400).json({ error: "Invalid message id" });
+          return;
+        }
         const deleted = await deleteSmsMessage(id);
-        if (!deleted) return res.status(404).json({ error: "Message not found" });
+        if (!deleted) {
+          res.status(404).json({ error: "Message not found" });
+          return;
+        }
         res.json({ success: true });
       } catch (e: any) {
         console.error("DELETE /api/sms/messages failed:", e);

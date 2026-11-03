@@ -102,9 +102,11 @@ export function registerInvoiceTemplateRoutes(app: Express): void {
   app.get("/api/invoices/templates", requireInvoiceFeature, async (_req, res) => {
     try {
       const result = await pool.query("SELECT * FROM invoice_creation_templates ORDER BY created_at DESC, id DESC");
-      return res.json(result.rows.map(mapTemplate));
+      res.json(result.rows.map(mapTemplate));
+      return;
     } catch {
-      return res.status(500).json({ error: "Could not load invoice templates" });
+      res.status(500).json({ error: "Could not load invoice templates" });
+      return;
     }
   });
 
@@ -113,7 +115,8 @@ export function registerInvoiceTemplateRoutes(app: Express): void {
     try {
       template = parseTemplate(req.body);
     } catch (error) {
-      return res.status(400).json({ error: error instanceof Error ? error.message : "Template is invalid" });
+      res.status(400).json({ error: error instanceof Error ? error.message : "Template is invalid" });
+      return;
     }
     const client = await pool.connect();
     try {
@@ -122,7 +125,8 @@ export function registerInvoiceTemplateRoutes(app: Express): void {
       const count = await client.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM invoice_creation_templates");
       if (Number(count.rows[0]?.count ?? 0) >= MAX_TEMPLATES) {
         await client.query("ROLLBACK");
-        return res.status(409).json({ error: `A maximum of ${MAX_TEMPLATES} shared invoice templates is allowed` });
+        res.status(409).json({ error: `A maximum of ${MAX_TEMPLATES} shared invoice templates is allowed` });
+        return;
       }
       const saved = await client.query(
         `INSERT INTO invoice_creation_templates (label, line_items, due_days, terms, tax_rate_bps, discount_cents, notes)
@@ -130,10 +134,12 @@ export function registerInvoiceTemplateRoutes(app: Express): void {
         [template.label, JSON.stringify(template.lineItems), template.dueDays, template.terms, template.taxRateBps, template.discountCents, template.notes],
       );
       await client.query("COMMIT");
-      return res.status(201).json(mapTemplate(saved.rows[0]));
+      res.status(201).json(mapTemplate(saved.rows[0]));
+      return;
     } catch {
       await client.query("ROLLBACK").catch(() => undefined);
-      return res.status(500).json({ error: "Could not save invoice template" });
+      res.status(500).json({ error: "Could not save invoice template" });
+      return;
     } finally {
       client.release();
     }
@@ -141,13 +147,21 @@ export function registerInvoiceTemplateRoutes(app: Express): void {
 
   app.delete("/api/invoices/templates/:id", requireInvoiceFeature, async (req, res) => {
     const id = Number(req.params.id);
-    if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: "Template id is invalid" });
+    if (!Number.isSafeInteger(id) || id < 1) {
+      res.status(400).json({ error: "Template id is invalid" });
+      return;
+    }
     try {
       const deleted = await pool.query("DELETE FROM invoice_creation_templates WHERE id=$1", [id]);
-      if (!deleted.rowCount) return res.status(404).json({ error: "Invoice template not found" });
-      return res.status(204).end();
+      if (!deleted.rowCount) {
+        res.status(404).json({ error: "Invoice template not found" });
+        return;
+      }
+      res.status(204).end();
+      return;
     } catch {
-      return res.status(500).json({ error: "Could not delete invoice template" });
+      res.status(500).json({ error: "Could not delete invoice template" });
+      return;
     }
   });
 }

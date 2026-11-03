@@ -27,9 +27,15 @@ export function registerStaffAccountDeletionRoutes(app: Express, options: Deleti
   });
 
   app.delete("/api/staff-access/:userId/account", async (req, res) => {
-    if (!isOwner(req) || !req.dbUser?.id) return res.status(403).json({ message: "Owner access required" });
+    if (!isOwner(req) || !req.dbUser?.id) {
+      res.status(403).json({ message: "Owner access required" });
+      return;
+    }
     const confirmation = typeof req.body?.confirmEmail === "string" ? req.body.confirmEmail.trim().toLowerCase() : "";
-    if (!confirmation) return res.status(400).json({ message: "Type the account email to confirm deletion" });
+    if (!confirmation) {
+      res.status(400).json({ message: "Type the account email to confirm deletion" });
+      return;
+    }
 
     const client = await pool.connect();
     let clerkDeleted = false;
@@ -42,19 +48,25 @@ export function registerStaffAccountDeletionRoutes(app: Express, options: Deleti
       );
       const target = result.rows[0];
       const email = typeof target?.email === "string" ? target.email.trim().toLowerCase() : "";
-      if (!target) return res.status(404).json({ message: "Account not found" });
+      if (!target) {
+        res.status(404).json({ message: "Account not found" });
+        return;
+      }
       if (!email || email !== confirmation) {
-        return res.status(409).json({ message: "Account email changed. Reload and confirm the current email." });
+        res.status(409).json({ message: "Account email changed. Reload and confirm the current email." });
+        return;
       }
       if (target.id === req.dbUser.id || isAdminEmail(email)) {
-        return res.status(403).json({ message: "Owner accounts cannot be deleted here" });
+        res.status(403).json({ message: "Owner accounts cannot be deleted here" });
+        return;
       }
       const helpdesk = await client.query(
         "SELECT 1 FROM staff_helpdesk_links WHERE auth_user_id = $1",
         [target.id],
       );
       if (helpdesk.rowCount) {
-        return res.status(409).json({ message: "Unlink the helpdesk assignee before deleting this account." });
+        res.status(409).json({ message: "Unlink the helpdesk assignee before deleting this account." });
+        return;
       }
       const linked = await client.query(
         "SELECT clerk_user_id FROM auth_user_clerk_links WHERE auth_user_id = $1",
@@ -62,15 +74,18 @@ export function registerStaffAccountDeletionRoutes(app: Express, options: Deleti
       );
       const users = await findClerkUsers(email);
       if (users.some((user) => user.email !== email)) {
-        return res.status(409).json({ message: "Sign-in has a different or unverified primary email. Resolve it before deleting." });
+        res.status(409).json({ message: "Sign-in has a different or unverified primary email. Resolve it before deleting." });
+        return;
       }
       if (users.length > 1) {
-        return res.status(409).json({ message: "Multiple sign-in accounts use this email. Resolve them before deleting." });
+        res.status(409).json({ message: "Multiple sign-in accounts use this email. Resolve them before deleting." });
+        return;
       }
       const clerkUser = users[0];
       if ((linked.rows[0] && linked.rows[0].clerk_user_id !== clerkUser?.id)
         || (String(target.id).startsWith("user_") && target.id !== clerkUser?.id)) {
-        return res.status(409).json({ message: "Account identity does not match its sign-in. Resolve the link first." });
+        res.status(409).json({ message: "Account identity does not match its sign-in. Resolve the link first." });
+        return;
       }
 
       // Verify database deletion constraints before touching Clerk. The entire
@@ -83,13 +98,15 @@ export function registerStaffAccountDeletionRoutes(app: Express, options: Deleti
       }
       await client.query("COMMIT");
       committed = true;
-      return res.json({ deleted: true });
+      res.json({ deleted: true });
+      return;
     } catch {
-      return res.status(500).json({
+      res.status(500).json({
         message: clerkDeleted
           ? "Sign-in was removed, but local cleanup could not be confirmed. Contact the owner before retrying."
           : "Account deletion failed. No database changes were saved.",
       });
+      return;
     } finally {
       if (!committed) await client.query("ROLLBACK").catch(() => {});
       client.release();

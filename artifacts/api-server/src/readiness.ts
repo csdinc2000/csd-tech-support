@@ -23,10 +23,12 @@ export function registerReadinessRoutes(
     app.get(path, async (_req, res) => {
       try {
         await Promise.all(dependencyChecks.critical.map((check) => check()));
-        return res.json(healthyResponse);
+        res.json(healthyResponse);
+        return;
       } catch {
         // Keep connection details and provider errors out of this public endpoint.
-        return res.status(503).json(unavailableResponse);
+        res.status(503).json(unavailableResponse);
+        return;
       }
     });
   }

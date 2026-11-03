@@ -68,9 +68,9 @@ type StaffRecoveryAlert = {
   severity: string;
 };
 
-const FEATURE_OPTIONS: Array<{ key: StaffFeature; label: string; sensitive?: boolean }> = [
+const FEATURE_OPTIONS: Array<{ key: StaffFeature; label: string; sensitive?: boolean; hint?: string }> = [
   { key: "dashboard", label: "Dashboard" },
-  { key: "crm", label: "Customers & CRM" },
+  { key: "crm", label: "Customers & CRM", hint: "Enables customer and job pages. Customer, job, and contact assignments still limit what staff can see." },
   { key: "communications", label: "Communications" },
   { key: "scheduling", label: "Scheduling" },
   { key: "operations", label: "Devices & operations" },
@@ -238,7 +238,23 @@ function SectionHeading({ title, hint, aside }: { title: string; hint?: string; 
   );
 }
 
-function AssignmentList({ title, count, emptyText, children }: { title: string; count: number; emptyText: string; children: ReactNode }) {
+function AssignmentList({
+  title,
+  count,
+  emptyText,
+  children,
+  isLoading = false,
+  error,
+  onRetry,
+}: {
+  title: string;
+  count: number;
+  emptyText: string;
+  children: ReactNode;
+  isLoading?: boolean;
+  error?: string;
+  onRetry?: () => void;
+}) {
   return (
     <div className="rounded-lg border">
       <div className="flex items-center justify-between border-b px-3 py-2">
@@ -246,7 +262,14 @@ function AssignmentList({ title, count, emptyText, children }: { title: string; 
         <span className="text-xs text-muted-foreground">{count}</span>
       </div>
       <div className="max-h-64 overflow-y-auto p-1">
-        {count === 0 ? (
+        {isLoading ? (
+          <p className="p-4 text-center text-xs text-muted-foreground">Loading {title.toLowerCase()}…</p>
+        ) : error ? (
+          <div className="flex items-center justify-between gap-3 p-3 text-xs text-destructive" role="alert">
+            <span>{error}</span>
+            {onRetry && <Button type="button" variant="ghost" size="sm" onClick={onRetry}>Retry</Button>}
+          </div>
+        ) : count === 0 ? (
           <p className="p-4 text-center text-xs text-muted-foreground">{emptyText}</p>
         ) : children}
       </div>
@@ -1119,6 +1142,7 @@ export default function StaffAccessPage({ useAccess = useAdminAccess }: { useAcc
                             <span className={cn("text-sm", disabled && "opacity-50")}>
                               {feature.label}
                               {feature.sensitive && <span className="ml-2 text-xs text-muted-foreground">Sensitive</span>}
+                              {feature.hint && <span className="mt-0.5 block max-w-xl text-xs font-normal text-muted-foreground">{feature.hint}</span>}
                             </span>
                             <Switch
                               checked={selectedProfile.features[feature.key]}
@@ -1161,8 +1185,20 @@ export default function StaffAccessPage({ useAccess = useAdminAccess }: { useAcc
                         title="Assignments"
                         hint="Limit this account to specific customers, jobs, and contacts. Administrators are never limited."
                       />
+                      {selectedProfile.approvalStatus !== "approved" && (
+                        <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                          You can save assignments now, but this employee cannot use them until their staff account is approved.
+                        </p>
+                      )}
                       <div className="space-y-4">
-                        <AssignmentList title="Customers" count={clients.data?.length ?? 0} emptyText="No customers available.">
+                        <AssignmentList
+                          title="Customers"
+                          count={clients.data?.length ?? 0}
+                          emptyText="No customers available."
+                          isLoading={clients.isLoading}
+                          error={clients.isError && !clients.data?.length ? "Customers could not be loaded." : undefined}
+                          onRetry={() => { void clients.refetch(); }}
+                        >
                           {clients.data?.map((client) => (
                             <label key={client.id} className={assignmentRowClass} data-testid={`assignment-client-${selectedProfile.id}-${client.id}`}>
                               <input
@@ -1182,7 +1218,14 @@ export default function StaffAccessPage({ useAccess = useAdminAccess }: { useAcc
                           ))}
                         </AssignmentList>
 
-                        <AssignmentList title="Jobs" count={jobs.data?.length ?? 0} emptyText="No jobs available.">
+                        <AssignmentList
+                          title="Jobs"
+                          count={jobs.data?.length ?? 0}
+                          emptyText="No jobs available."
+                          isLoading={jobs.isLoading}
+                          error={jobs.isError && !jobs.data?.length ? "Jobs could not be loaded." : undefined}
+                          onRetry={() => { void jobs.refetch(); }}
+                        >
                           {jobs.data?.map((job) => (
                             <label key={job.id} className={assignmentRowClass} data-testid={`assignment-job-${selectedProfile.id}-${job.id}`}>
                               <input
@@ -1205,7 +1248,14 @@ export default function StaffAccessPage({ useAccess = useAdminAccess }: { useAcc
                           ))}
                         </AssignmentList>
 
-                        <AssignmentList title="Contacts" count={contacts.data?.length ?? 0} emptyText="No contacts available.">
+                        <AssignmentList
+                          title="Contacts"
+                          count={contacts.data?.length ?? 0}
+                          emptyText="No contacts available."
+                          isLoading={contacts.isLoading}
+                          error={contacts.isError && !contacts.data?.length ? "Contacts could not be loaded." : undefined}
+                          onRetry={() => { void contacts.refetch(); }}
+                        >
                           {contacts.data?.map((contact) => {
                             const assignment = selectedProfile.assignments.contactAssignments.find((item) => item.contactId === contact.id);
                             const replaceContact = (next: { contactId: number; canEdit: boolean } | null) => {

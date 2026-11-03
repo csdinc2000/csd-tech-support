@@ -287,7 +287,10 @@ export function registerHelpdeskRoutes(app: Express) {
   });
   app.put("/api/helpdesk/departments/:id", async (req, res) => {
     const row = await storage.updateTicketDepartment(parseInt(req.params.id), req.body);
-    if (!row) return res.status(404).json({ error: "Not found" });
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
     res.json(row);
   });
   app.delete("/api/helpdesk/departments/:id", async (req, res) => {
@@ -307,7 +310,10 @@ export function registerHelpdeskRoutes(app: Express) {
   });
   app.put("/api/helpdesk/teams/:id", async (req, res) => {
     const row = await storage.updateTicketTeam(parseInt(req.params.id), req.body);
-    if (!row) return res.status(404).json({ error: "Not found" });
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
     res.json(row);
   });
   app.delete("/api/helpdesk/teams/:id", async (req, res) => {
@@ -347,7 +353,10 @@ export function registerHelpdeskRoutes(app: Express) {
   });
   app.put("/api/helpdesk/help-topics/:id", async (req, res) => {
     const row = await storage.updateTicketHelpTopic(parseInt(req.params.id), req.body);
-    if (!row) return res.status(404).json({ error: "Not found" });
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
     res.json(row);
   });
   app.delete("/api/helpdesk/help-topics/:id", async (req, res) => {
@@ -366,7 +375,10 @@ export function registerHelpdeskRoutes(app: Express) {
   });
   app.put("/api/helpdesk/sla-plans/:id", async (req, res) => {
     const row = await storage.updateSlaPlan(parseInt(req.params.id), req.body);
-    if (!row) return res.status(404).json({ error: "Not found" });
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
     res.json(row);
   });
   app.delete("/api/helpdesk/sla-plans/:id", async (req, res) => {
@@ -385,7 +397,10 @@ export function registerHelpdeskRoutes(app: Express) {
   });
   app.put("/api/helpdesk/canned-responses/:id", async (req, res) => {
     const row = await storage.updateCannedResponse(parseInt(req.params.id), req.body);
-    if (!row) return res.status(404).json({ error: "Not found" });
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
     res.json(row);
   });
   app.delete("/api/helpdesk/canned-responses/:id", async (req, res) => {
@@ -404,7 +419,10 @@ export function registerHelpdeskRoutes(app: Express) {
   });
   app.put("/api/helpdesk/email-templates/:id", async (req, res) => {
     const row = await storage.updateEmailTemplate(parseInt(req.params.id), req.body);
-    if (!row) return res.status(404).json({ error: "Not found" });
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
     res.json(row);
   });
   app.delete("/api/helpdesk/email-templates/:id", async (req, res) => {
@@ -423,7 +441,10 @@ export function registerHelpdeskRoutes(app: Express) {
   });
   app.put("/api/helpdesk/filters/:id", async (req, res) => {
     const row = await storage.updateTicketFilter(parseInt(req.params.id), req.body);
-    if (!row) return res.status(404).json({ error: "Not found" });
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
     res.json(row);
   });
   app.delete("/api/helpdesk/filters/:id", async (req, res) => {
@@ -488,7 +509,10 @@ export function registerHelpdeskRoutes(app: Express) {
     try {
       const ticketId = parseInt(req.params.id);
       const ticket = await storage.getTicket(ticketId);
-      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+      if (!ticket) {
+        res.status(404).json({ error: "Ticket not found" });
+        return;
+      }
       const uid = sessionUserId(req);
       const data = insertTicketMessageSchema.parse({
         ...req.body,
@@ -535,18 +559,26 @@ export function registerHelpdeskRoutes(app: Express) {
     try {
       const ticketId = parseInt(req.params.id);
       const ticket = await storage.getTicket(ticketId);
-      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+      if (!ticket) {
+        res.status(404).json({ error: "Ticket not found" });
+        return;
+      }
       const settings = await storage.getTicketSettings();
       const { filename, mimeType, dataBase64, messageId } = req.body || {};
-      if (!filename || !dataBase64) return res.status(400).json({ error: "filename and dataBase64 required" });
+      if (!filename || !dataBase64) {
+        res.status(400).json({ error: "filename and dataBase64 required" });
+        return;
+      }
 
       const allowedMime = (settings?.allowedMimeTypes || "").split(",").map((s) => s.trim()).filter(Boolean);
       if (allowedMime.length && mimeType && !allowedMime.includes(mimeType)) {
-        return res.status(400).json({ error: `Mime type not allowed: ${mimeType}` });
+        res.status(400).json({ error: `Mime type not allowed: ${mimeType}` });
+        return;
       }
       const buf = Buffer.from(dataBase64, "base64");
       if (settings?.maxAttachmentBytes && buf.length > settings.maxAttachmentBytes) {
-        return res.status(400).json({ error: "File exceeds max attachment size" });
+        res.status(400).json({ error: "File exceeds max attachment size" });
+        return;
       }
       const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
       const storeName = `${ticketId}-${Date.now()}-${safeName}`;
@@ -581,8 +613,14 @@ export function registerHelpdeskRoutes(app: Express) {
     const attId = parseInt(req.params.attId);
     const list = await storage.getTicketAttachments(parseInt(req.params.id));
     const att = list.find((a) => a.id === attId);
-    if (!att) return res.status(404).json({ error: "Not found" });
-    if (!fs.existsSync(att.storagePath)) return res.status(410).json({ error: "Attachment missing on disk" });
+    if (!att) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (!fs.existsSync(att.storagePath)) {
+      res.status(410).json({ error: "Attachment missing on disk" });
+      return;
+    }
     res.setHeader("Content-Disposition", `attachment; filename="${att.filename}"`);
     if (att.mimeType) res.setHeader("Content-Type", att.mimeType);
     fs.createReadStream(att.storagePath).pipe(res);
@@ -592,14 +630,18 @@ export function registerHelpdeskRoutes(app: Express) {
   app.post("/api/tickets/:id/lock", async (req, res) => {
     const ticketId = parseInt(req.params.id);
     const ticket = await storage.getTicket(ticketId);
-    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+    if (!ticket) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
     const uid = sessionUserId(req);
     const settings = await storage.getTicketSettings();
     const expiryMin = settings?.lockExpiryMinutes ?? 15;
     if (ticket.lockedBy && ticket.lockedBy !== uid && ticket.lockedAt) {
       const ageMs = Date.now() - new Date(ticket.lockedAt).getTime();
       if (ageMs < expiryMin * 60_000) {
-        return res.status(409).json({ error: "Ticket is locked by another user", lockedBy: ticket.lockedBy });
+        res.status(409).json({ error: "Ticket is locked by another user", lockedBy: ticket.lockedBy });
+        return;
       }
     }
     const updated = await storage.updateTicket(ticketId, { lockedBy: uid, lockedAt: new Date() });
@@ -615,7 +657,10 @@ export function registerHelpdeskRoutes(app: Express) {
   app.post("/api/tickets/:id/unlock", async (req, res) => {
     const ticketId = parseInt(req.params.id);
     const updated = await storage.updateTicket(ticketId, { lockedBy: null, lockedAt: null });
-    if (!updated) return res.status(404).json({ error: "Ticket not found" });
+    if (!updated) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
     await storage.createTicketActivity({
       ticketId,
       actorType: "staff",
@@ -631,7 +676,10 @@ export function registerHelpdeskRoutes(app: Express) {
     const ticketId = parseInt(req.params.id);
     const { assignedTo, teamId, note } = req.body || {};
     const ticket = await storage.getTicket(ticketId);
-    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+    if (!ticket) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
     const updated = await storage.updateTicket(ticketId, {
       assignedTo: assignedTo ?? null,
       teamId: teamId ?? ticket.teamId,
@@ -664,7 +712,10 @@ export function registerHelpdeskRoutes(app: Express) {
     const ticketId = parseInt(req.params.id);
     const { departmentId, note } = req.body || {};
     const ticket = await storage.getTicket(ticketId);
-    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+    if (!ticket) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
     const updated = await storage.updateTicket(ticketId, {
       departmentId,
       assignedTo: null, // clear assignee on transfer
@@ -696,7 +747,10 @@ export function registerHelpdeskRoutes(app: Express) {
     const ticketId = parseInt(req.params.id);
     const { status } = req.body || {};
     const ticket = await storage.getTicket(ticketId);
-    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+    if (!ticket) {
+      res.status(404).json({ error: "Ticket not found" });
+      return;
+    }
     const patch: Partial<Ticket> = { status };
     if (status === "closed" || status === "resolved") patch.closedAt = new Date();
     const updated = await storage.updateTicket(ticketId, patch);
@@ -718,7 +772,10 @@ export function registerHelpdeskRoutes(app: Express) {
     const cannedId = parseInt(req.params.cannedId);
     const ticket = await storage.getTicket(ticketId);
     const canned = await storage.getCannedResponse(cannedId);
-    if (!ticket || !canned) return res.status(404).json({ error: "Not found" });
+    if (!ticket || !canned) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
     const body = canned.body
       .replace(/{{\s*ticket_number\s*}}/gi, ticket.ticketNumber || String(ticket.id))
       .replace(/{{\s*requester_name\s*}}/gi, ticket.requesterName || "there")
@@ -788,7 +845,10 @@ export function registerHelpdeskRoutes(app: Express) {
   // Overdue scanner (returns + sends alerts for any not yet alerted)
   app.post("/api/helpdesk/sla/check-overdue", async (_req, res) => {
     const settings = await storage.getTicketSettings();
-    if (settings && !settings.overdueAlertEnabled) return res.json({ alerted: 0 });
+    if (settings && !settings.overdueAlertEnabled) {
+      res.json({ alerted: 0 });
+      return;
+    }
     const overdue = await storage.getOverdueTickets();
     let alerted = 0;
     for (const t of overdue) {
@@ -838,14 +898,19 @@ export function registerHelpdeskRoutes(app: Express) {
     try {
       const data = portalLookupSchema.parse(req.body);
       const ticket = await storage.getTicketByNumber(data.ticketNumber);
-      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+      if (!ticket) {
+        res.status(404).json({ error: "Ticket not found" });
+        return;
+      }
       if (ticket.requesterEmail?.toLowerCase() !== data.email.toLowerCase()) {
-        return res.status(403).json({ error: "Email does not match this ticket" });
+        res.status(403).json({ error: "Email does not match this ticket" });
+        return;
       }
       // accessToken acts as a second factor — required unless the caller can
       // prove ownership some other way. Skip token check only if it was never set.
       if (ticket.accessToken && data.accessToken !== ticket.accessToken) {
-        return res.status(403).json({ error: "Invalid access token" });
+        res.status(403).json({ error: "Invalid access token" });
+        return;
       }
       // Return ticket + public messages + attachments (sanitized)
       const messages = (await storage.getTicketMessages(ticket.id, { includeInternal: false }));
@@ -887,7 +952,8 @@ export function registerHelpdeskRoutes(app: Express) {
       const data = portalReplySchema.parse(req.body);
       const ticket = await storage.getTicketByEmailAndToken(data.email, data.accessToken);
       if (!ticket || ticket.ticketNumber !== data.ticketNumber) {
-        return res.status(403).json({ error: "Invalid credentials" });
+        res.status(403).json({ error: "Invalid credentials" });
+        return;
       }
       const msg = await storage.createTicketMessage({
         ticketId: ticket.id,
@@ -928,7 +994,8 @@ export function registerHelpdeskRoutes(app: Express) {
       const body = (req.body.text || req.body.body || req.body.html || "").toString();
       const inReplyTo = (req.body.inReplyTo || req.body["in-reply-to"] || "").toString();
       if (!from || !subject) {
-        return res.status(400).json({ error: "from and subject required" });
+        res.status(400).json({ error: "from and subject required" });
+        return;
       }
       const emailMatch = from.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
       const requesterEmail = emailMatch ? emailMatch[0] : from;
@@ -956,7 +1023,8 @@ export function registerHelpdeskRoutes(app: Express) {
             action: "reply",
             details: "via email",
           });
-          return res.json({ kind: "reply", ticketId: existing.id });
+          res.json({ kind: "reply", ticketId: existing.id });
+          return;
         }
       }
       const created = await storage.createTicket({

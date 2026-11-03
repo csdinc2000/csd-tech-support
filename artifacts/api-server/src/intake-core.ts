@@ -182,6 +182,22 @@ export function buildIntakeAttribution(input: {
   };
 }
 
+/**
+ * The `utm_campaign` a public visitor arrived with, cleaned for storage in
+ * `csd_intake_records.campaign`. Anything unusable becomes null — a bad
+ * tracking parameter must never block a service request.
+ */
+export function normalizeUtmCampaign(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const clean = value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9._-]/g, "")
+    .slice(0, 80);
+  return clean || null;
+}
+
 /** Adds a comma-delimited tag only when that exact tag is not already present. */
 export function mergeIntakeTag(existing: string | null | undefined, incoming: string | null | undefined): string | null {
   const tag = incoming?.trim();

@@ -54,21 +54,30 @@ function ipFrom(req: Request) {
 export function registerServiceContractRoutes(app: Express) {
   app.get("/api/clients/:id/contracts", async (req, res) => {
     const clientId = Number(req.params.id);
-    if (!Number.isInteger(clientId) || clientId <= 0) return res.status(400).json({ message: "Invalid client" });
+    if (!Number.isInteger(clientId) || clientId <= 0) {
+      res.status(400).json({ message: "Invalid client" });
+      return;
+    }
     const result = await pool.query(`SELECT id, client_id AS "clientId", title, status, annual_value_cents AS "annualValueCents", monthly_payment_cents AS "monthlyPaymentCents", effective_date AS "effectiveDate", signer_name AS "signerName", signer_title AS "signerTitle", signer_email AS "signerEmail", response_time_sla AS "responseTimeSla", support_hours AS "supportHours", terms, sent_at AS "sentAt", signed_at AS "signedAt", token_expires_at AS "tokenExpiresAt", created_at AS "createdAt" FROM service_contracts WHERE client_id=$1 ORDER BY created_at DESC`, [clientId]);
     res.json(result.rows);
   });
 
   app.post("/api/service-contracts", async (req, res) => {
     const parsed = createSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid contract" });
+    if (!parsed.success) {
+      res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid contract" });
+      return;
+    }
     const input = parsed.data;
     const complete = termsAreComplete(input.terms);
     const client = await pool.query(
       `SELECT id,name,address,city,state,zip_code AS "zipCode" FROM clients WHERE id=$1`,
       [input.clientId],
     );
-    if (!client.rowCount) return res.status(404).json({ message: "Client not found" });
+    if (!client.rowCount) {
+      res.status(404).json({ message: "Client not found" });
+      return;
+    }
     const selectedClient = client.rows[0];
     const clientAddress = [
       selectedClient.address,
@@ -88,13 +97,28 @@ export function registerServiceContractRoutes(app: Express) {
 
   app.post("/api/service-contracts/:id/signing-link", async (req, res) => {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid contract" });
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ message: "Invalid contract" });
+      return;
+    }
     const token = randomBytes(32).toString("base64url");
     const current = await pool.query(`SELECT status,terms FROM service_contracts WHERE id=$1`, [id]);
-    if (!current.rowCount) return res.status(404).json({ message: "Contract not found" });
-    if (current.rows[0].status === "signed") return res.status(409).json({ message: "Signed contracts cannot receive a new signing link" });
-    if (current.rows[0].status === "void") return res.status(409).json({ message: "Voided contracts cannot receive a new signing link" });
-    if (!termsAreComplete(current.rows[0].terms)) return res.status(409).json({ message: "Complete all service coverage fields before creating a signing link" });
+    if (!current.rowCount) {
+      res.status(404).json({ message: "Contract not found" });
+      return;
+    }
+    if (current.rows[0].status === "signed") {
+      res.status(409).json({ message: "Signed contracts cannot receive a new signing link" });
+      return;
+    }
+    if (current.rows[0].status === "void") {
+      res.status(409).json({ message: "Voided contracts cannot receive a new signing link" });
+      return;
+    }
+    if (!termsAreComplete(current.rows[0].terms)) {
+      res.status(409).json({ message: "Complete all service coverage fields before creating a signing link" });
+      return;
+    }
     const result = await pool.query(
       `UPDATE service_contracts
        SET signing_token_hash=$2, token_expires_at=NOW()+INTERVAL '30 days',
@@ -103,7 +127,10 @@ export function registerServiceContractRoutes(app: Express) {
        RETURNING id,status,token_expires_at AS "tokenExpiresAt"`,
        [id, tokenHash(token), JSON.stringify(current.rows[0].terms)],
     );
-    if (!result.rowCount) return res.status(409).json({ message: "This agreement can no longer receive a signing link" });
+    if (!result.rowCount) {
+      res.status(409).json({ message: "This agreement can no longer receive a signing link" });
+      return;
+    }
     await pool.query(`INSERT INTO service_contract_events(contract_id,event_type,actor_type,actor_identity) VALUES($1,'signing_link_regenerated','staff',$2)`, [id, req.dbUser?.id ?? null]);
     res.json({ ...result.rows[0], signingPath: `/sign/contract/${token}` });
   });
@@ -111,10 +138,19 @@ export function registerServiceContractRoutes(app: Express) {
   app.patch("/api/service-contracts/:id", async (req, res) => {
     const id = Number(req.params.id);
     const parsed = updateTermsSchema.safeParse(req.body?.terms);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid contract" });
-    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message || "Complete every service field" });
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ message: "Invalid contract" });
+      return;
+    }
+    if (!parsed.success) {
+      res.status(400).json({ message: parsed.error.issues[0]?.message || "Complete every service field" });
+      return;
+    }
     const result = await pool.query(`UPDATE service_contracts SET terms=$2,updated_at=NOW() WHERE id=$1 AND status <> 'signed' AND status <> 'void' RETURNING id,status,terms`, [id, parsed.data]);
-    if (!result.rowCount) return res.status(409).json({ message: "Signed or voided contracts cannot be edited" });
+    if (!result.rowCount) {
+      res.status(409).json({ message: "Signed or voided contracts cannot be edited" });
+      return;
+    }
     await pool.query(`INSERT INTO service_contract_events(contract_id,event_type,actor_type,actor_identity) VALUES($1,'terms_updated','staff',$2)`, [id, req.dbUser?.id ?? null]);
     res.json(result.rows[0]);
   });
@@ -134,23 +170,44 @@ export function registerServiceContractRoutes(app: Express) {
     const result = transitioned.rowCount
       ? transitioned
       : await pool.query(`SELECT ${fields} FROM service_contracts WHERE signing_token_hash=$1`, [hash]);
-    if (!result.rowCount) return res.status(404).json({ message: "Contract not found" });
+    if (!result.rowCount) {
+      res.status(404).json({ message: "Contract not found" });
+      return;
+    }
     const contract = result.rows[0];
-    if (contract.status === "draft") return res.status(409).json({ message: "This agreement is still being completed" });
-    if (new Date(contract.tokenExpiresAt) < new Date() && contract.status !== "signed") return res.status(410).json({ message: "This signing link has expired" });
+    if (contract.status === "draft") {
+      res.status(409).json({ message: "This agreement is still being completed" });
+      return;
+    }
+    if (new Date(contract.tokenExpiresAt) < new Date() && contract.status !== "signed") {
+      res.status(410).json({ message: "This signing link has expired" });
+      return;
+    }
     res.setHeader("Cache-Control", "no-store");
     res.json(contract);
   });
 
   app.post("/api/public/contracts/:token/sign", signingLimiter, async (req, res) => {
     const parsed = signSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid signature" });
+    if (!parsed.success) {
+      res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid signature" });
+      return;
+    }
     const hashOfToken = tokenHash(String(req.params.token));
     const lookup = await pool.query(`SELECT * FROM service_contracts WHERE signing_token_hash=$1`, [hashOfToken]);
-    if (!lookup.rowCount) return res.status(404).json({ message: "Contract not found" });
+    if (!lookup.rowCount) {
+      res.status(404).json({ message: "Contract not found" });
+      return;
+    }
     const contract = lookup.rows[0];
-    if (contract.status === "signed") return res.status(409).json({ message: "This contract is already signed" });
-    if (contract.status === "void" || new Date(contract.token_expires_at) < new Date()) return res.status(410).json({ message: "This contract can no longer be signed" });
+    if (contract.status === "signed") {
+      res.status(409).json({ message: "This contract is already signed" });
+      return;
+    }
+    if (contract.status === "void" || new Date(contract.token_expires_at) < new Date()) {
+      res.status(410).json({ message: "This contract can no longer be signed" });
+      return;
+    }
     const snapshot = { ...contract, ...parsed.data, signedAt: new Date().toISOString() };
     const hash = documentHash(snapshot);
     // The status predicate locks out later coverage edits; the terms predicate
@@ -159,7 +216,10 @@ export function registerServiceContractRoutes(app: Express) {
       WHERE id=$1 AND signing_token_hash=$9 AND status IN ('sent','viewed') AND token_expires_at > NOW()
         AND terms=$10::jsonb RETURNING id`,
       [contract.id, parsed.data.signerName, parsed.data.signerTitle, parsed.data.signerEmail.toLowerCase(), parsed.data.signatureText, hash, ipFrom(req), String(req.headers["user-agent"] || "").slice(0, 500), hashOfToken, JSON.stringify(contract.terms)]);
-    if (!signed.rowCount) return res.status(409).json({ message: "This signing link is no longer available" });
+    if (!signed.rowCount) {
+      res.status(409).json({ message: "This signing link is no longer available" });
+      return;
+    }
     await pool.query(`INSERT INTO service_contract_events(contract_id,event_type,actor_type,actor_identity,metadata) VALUES($1,'signed','signer',$2,$3)`, [contract.id, parsed.data.signerEmail.toLowerCase(), { documentHash: hash }]);
     res.json({ status: "signed", signedAt: new Date().toISOString(), documentHash: hash });
   });

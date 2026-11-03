@@ -5,6 +5,7 @@ import {
   Menu, X, Activity, Shield, Zap, Network, TrendingUp, Briefcase, UserCircle,
   MessageCircle, Bot, Building2, ClipboardList, ChevronDown, LifeBuoy, PhoneCall, FileText, Mail,
   MapPin, Clock, Wrench, HeadphonesIcon, Sparkles, CalendarDays, Video, Radio, Archive, HeartPulse, Store, Package, GraduationCap, Globe2,
+  Megaphone, Target, Wand2, CheckSquare, Gift,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -61,11 +62,18 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    id: "marketplace",
-    title: "Marketplace",
-    icon: Store,
-    feature: "marketplace",
-    items: [{ name: "Community Listings", href: "/marketplace", icon: Store }],
+    id: "marketing",
+    title: "Marketing",
+    icon: Megaphone,
+    feature: "crm",
+    items: [
+      { name: "Marketing Hub", href: "/marketing", icon: Megaphone, match: ["/marketing/channels"] },
+      { name: "Campaigns & Tracking", href: "/marketing/campaigns", icon: Target },
+      { name: "Referral Program", href: "/marketing/referrals", icon: Gift },
+      { name: "Marketing Tools", href: "/marketing/tools", icon: Wand2 },
+      { name: "Marketing Playbook", href: "/marketing/playbook", icon: CheckSquare },
+      { name: "Community Listings", href: "/marketplace", icon: Store, feature: "marketplace" },
+    ],
   },
   {
     id: "communications",
@@ -139,6 +147,8 @@ function isItemActive(item: NavItem, location: string) {
   const { href } = item;
   // "/dashboard" has its own sub-views (e.g. /dashboard/rmm) so it only matches exactly.
   if (href === "/dashboard") return location === "/" || location === "/dashboard";
+  // The Marketing hub's other tabs have their own nav items.
+  if (href === "/marketing") return location === href || !!item.match?.includes(location);
   if (location === href) return true;
   // Sibling sub-views that share this item's hub tab but carry their own URL.
   if (item.match?.includes(location)) return true;

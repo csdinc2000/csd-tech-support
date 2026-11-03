@@ -83,26 +83,28 @@ export default function CustomerDetail() {
         <span className="text-foreground font-medium truncate max-w-[200px]">{client.name}</span>
       </div>
 
-      <div className="flex flex-col md:flex-row justify-between items-start gap-4">
-        <div className="flex items-center gap-4">
+      <div className="flex min-w-0 flex-col items-start justify-between gap-4 md:flex-row">
+        <div className="flex min-w-0 items-start gap-3 sm:gap-4">
           <CustomerAvatar clientId={client.id} name={client.name} avatar={client.avatar} />
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-gray-900">{client.name}</h1>
-            <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+          <div className="min-w-0 flex-1">
+            <h1 className="break-words text-2xl font-bold tracking-tight text-gray-900 md:text-3xl">{client.name}</h1>
+            <div className="mt-2 flex flex-wrap items-start gap-x-4 gap-y-2 text-sm text-gray-600">
               {client.contactEmail && (
-                <div className="flex items-center gap-1.5">
-                  <Mail className="h-3.5 w-3.5" /> {client.contactEmail}
+                <div className="flex min-w-0 items-start gap-1.5 break-all">
+                  <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 break-all">{client.contactEmail}</span>
                 </div>
               )}
               {client.contactPhone && (
-                <div className="flex items-center gap-1.5">
-                  <Phone className="h-3.5 w-3.5" /> {client.contactPhone}
+                <div className="flex min-w-0 items-start gap-1.5">
+                  <Phone className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span className="break-all">{client.contactPhone}</span>
                 </div>
               )}
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full flex-wrap gap-2 md:w-auto">
           <Button asChild variant="outline" className="shadow-sm" data-testid="button-invoice-customer">
             <Link href={`/invoices?bill=client:${client.id}`}>
               <FileText className="mr-2 h-4 w-4" />
@@ -372,18 +374,18 @@ export default function CustomerDetail() {
                   {contacts.map((contact: any) => (
                     <div key={contact.id} className="p-4 hover:bg-gray-50/50">
                       <div className="font-medium text-sm text-gray-900">{contact.fullName}</div>
-                      <div className="mt-2 space-y-1.5">
+                          <div className="mt-2 min-w-0 space-y-1.5">
                         {contact.email && (
-                          <div className="flex items-center gap-2 text-xs text-gray-600">
-                            <Mail className="h-3.5 w-3.5 text-gray-400" />
+                              <div className="flex min-w-0 items-start gap-2 text-xs text-gray-600">
+                                <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
                             {can("communications")
-                              ? <Link className="font-medium text-csd-red hover:underline" href={`/comms/email?contactId=${encodeURIComponent(contact.id)}`}>Email {contact.email} from Support</Link>
-                              : <span>{contact.email}</span>}
+                                  ? <Link className="min-w-0 break-all font-medium text-csd-red hover:underline" href={`/comms/email?contactId=${encodeURIComponent(contact.id)}`}>Email {contact.email} from Support</Link>
+                                  : <span className="min-w-0 break-all">{contact.email}</span>}
                           </div>
                         )}
                         {[contact.mobilePhone, contact.officePhone].filter(Boolean).map((phone: string, index: number) => (
-                          <div key={`${contact.id}-phone-${index}`} className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                            <Phone className="h-3.5 w-3.5 text-gray-400" /> <span className="font-mono">{phone}</span>
+                              <div key={`${contact.id}-phone-${index}`} className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-gray-600">
+                                <Phone className="h-3.5 w-3.5 shrink-0 text-gray-400" /> <span className="break-all font-mono">{phone}</span>
                             <CallViaCsdButton phone={phone} contactId={contact.id} label="Call from app" />
                           </div>
                         ))}

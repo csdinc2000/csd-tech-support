@@ -27,7 +27,10 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
     // arrives as unknown; only a string is a usable auth_users.id.
     const claimedUserId = auth.sessionClaims?.userId;
     const initialId = (typeof claimedUserId === "string" && claimedUserId) || auth.userId;
-    if (!initialId) return res.status(401).json({ message: "Authentication required" });
+    if (!initialId) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
     // A verified, accepted invitation may bind this Clerk user to a legacy
     // auth_users row. Resolve the link before looking up the empty JIT bridge.
     const linked = auth.userId
@@ -36,7 +39,8 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
     const userId: string = linked?.rows[0]?.auth_user_id ?? initialId;
     let [dbUser] = await db.select().from(authUsers).where(eq(authUsers.id, userId)).limit(1);
     if (linked?.rows[0] && !dbUser) {
-      return res.status(401).json({ message: "Account link no longer exists" });
+      res.status(401).json({ message: "Account link no longer exists" });
+      return;
     }
     if (!dbUser) {
       const [inserted] = await db
@@ -50,7 +54,10 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
         [dbUser] = await db.select().from(authUsers).where(eq(authUsers.id, userId)).limit(1);
       }
     }
-    if (!dbUser) return res.status(401).json({ message: "User provisioning failed" });
+    if (!dbUser) {
+      res.status(401).json({ message: "User provisioning failed" });
+      return;
+    }
     req.dbUser = dbUser;
     if (isAdminEmail(auth.sessionClaims?.email)) {
       // Historical owner profiles may be pending while the allowlist still

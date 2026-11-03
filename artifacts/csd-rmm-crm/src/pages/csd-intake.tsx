@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { ArrowLeft } from "lucide-react";
 import CsdIntakeForm from "@/components/forms/csd-intake-form";
+import { ReferralBanner } from "@/components/referrals/referral-banner";
 import csdLogo from "@assets/cropped-CSD-Logo-New_2_1765066834661.png";
 
 export default function CsdIntakePage() {
@@ -31,6 +32,7 @@ export default function CsdIntakePage() {
           </div>
         </div>
 
+        <ReferralBanner />
         <CsdIntakeForm className="max-w-2xl mx-auto" />
         
         <div className="text-center text-sm text-gray-500 space-y-2 pb-8">

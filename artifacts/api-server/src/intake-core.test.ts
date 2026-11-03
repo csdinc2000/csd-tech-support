@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildIntakeAttribution,
+  normalizeUtmCampaign,
   buildIntakeDeal,
   centsToAmount,
   intakePayloadFingerprint,
@@ -186,4 +187,14 @@ test("intake attribution separates the arrival channel from the marketing answer
     buildIntakeAttribution({ fromActiveCall: false, howDidYouHear: "   " }),
     { source: "website_intake", campaign: null },
   );
+});
+
+test("utm campaigns are normalized and junk is dropped", () => {
+  assert.equal(normalizeUtmCampaign(" Spring Tune Up "), "spring-tune-up");
+  assert.equal(normalizeUtmCampaign("fall_promo.2026"), "fall_promo.2026");
+  assert.equal(normalizeUtmCampaign("<script>"), "script");
+  assert.equal(normalizeUtmCampaign("x".repeat(200))?.length, 80);
+  assert.equal(normalizeUtmCampaign("!!!"), null);
+  assert.equal(normalizeUtmCampaign(42), null);
+  assert.equal(normalizeUtmCampaign(undefined), null);
 });

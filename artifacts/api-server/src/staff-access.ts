@@ -137,6 +137,50 @@ async function accessForUserId(userId: string): Promise<StaffAccess> {
   };
 }
 
+/**
+ * Resolve authorization for a signed Twilio identity without a browser request.
+ * Webhook routes use this only after validating a short-lived app-signed call
+ * grant and Twilio's request signature.
+ */
+export async function getStaffAccessForUserId(userId: string): Promise<StaffAccess> {
+  const user = await pool.query("SELECT email FROM auth_users WHERE id = $1", [userId]);
+  const email = user.rows[0]?.email;
+  if (!user.rows[0]) {
+    return {
+      role: "field_technician",
+      approvalStatus: "pending",
+      features: featureMap("field_technician", "pending"),
+      configuredFeatures: featureMap("field_technician", "approved"),
+      capabilities: { viewVoicemails: false },
+    };
+  }
+
+  if (isAdminEmail(email)) {
+    const ownerStatus = await pool.query(
+      `SELECT p.approval_status FROM auth_users u
+       JOIN staff_access_profiles p ON p.user_id = u.id
+       WHERE LOWER(u.email) = $1 AND EXISTS (
+         SELECT 1 FROM staff_access_audit a
+         WHERE a.target_user_id = u.id AND a.action = 'owner_status_updated'
+       )
+       ORDER BY CASE p.approval_status WHEN 'suspended' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END
+       LIMIT 1`,
+      [String(email).trim().toLowerCase()],
+    );
+    const approvalStatus = (ownerStatus.rows[0]?.approval_status ?? "approved") as ApprovalStatus;
+    const enabled = approvalStatus === "approved";
+    return {
+      role: "owner",
+      approvalStatus,
+      features: Object.fromEntries(ALL_STAFF_FEATURES.map((feature) => [feature, enabled])) as Record<StaffFeature, boolean>,
+      configuredFeatures: Object.fromEntries(ALL_STAFF_FEATURES.map((feature) => [feature, true])) as Record<StaffFeature, boolean>,
+      capabilities: { viewVoicemails: enabled },
+    };
+  }
+
+  return accessForUserId(userId);
+}
+
 export async function getStaffAccess(req: Request): Promise<StaffAccess> {
   if (isOwnerIdentity(req)) {
     const status = req.ownerApprovalStatus ?? "approved";
@@ -172,17 +216,43 @@ export async function canViewVoicemails(req: Request): Promise<boolean> {
 
 export async function getStaffAssignmentScope(req: Request): Promise<StaffAssignmentScope> {
   const access = await getStaffAccess(req);
+  if (access.role === "owner" && access.approvalStatus === "approved") {
+    return {
+      unrestricted: true,
+      staffAdministrator: access.features.staffAdmin,
+      clientIds: new Set(),
+      jobIds: new Set(),
+      contactIds: new Set(),
+      editableContactIds: new Set(),
+    };
+  }
+  if (req.dbUser?.id) return assignmentScopeForUserId(req.dbUser.id, access);
+  return emptyAssignmentScope();
+}
+
+function emptyAssignmentScope(): StaffAssignmentScope {
+  return {
+    unrestricted: false,
+    staffAdministrator: false,
+    clientIds: new Set(),
+    jobIds: new Set(),
+    contactIds: new Set(),
+    editableContactIds: new Set(),
+  };
+}
+
+async function assignmentScopeForUserId(userId: string, access: StaffAccess): Promise<StaffAssignmentScope> {
   const staffAdministrator = access.features.staffAdmin;
-  if ((access.role === "owner" && access.approvalStatus === "approved") || staffAdministrator) {
+  if (staffAdministrator) {
     return { unrestricted: true, staffAdministrator, clientIds: new Set(), jobIds: new Set(), contactIds: new Set(), editableContactIds: new Set() };
   }
-  if (access.approvalStatus !== "approved" || !req.dbUser?.id) {
-    return { unrestricted: false, staffAdministrator: false, clientIds: new Set(), jobIds: new Set(), contactIds: new Set(), editableContactIds: new Set() };
+  if (access.approvalStatus !== "approved") {
+    return emptyAssignmentScope();
   }
   const [clients, jobs, contacts] = await Promise.all([
-    pool.query("SELECT client_id FROM staff_client_assignments WHERE user_id = $1", [req.dbUser.id]),
-    pool.query("SELECT job_id FROM staff_job_assignments WHERE user_id = $1", [req.dbUser.id]),
-    pool.query("SELECT contact_id, can_edit FROM staff_contact_assignments WHERE user_id = $1", [req.dbUser.id]),
+    pool.query("SELECT client_id FROM staff_client_assignments WHERE user_id = $1", [userId]),
+    pool.query("SELECT job_id FROM staff_job_assignments WHERE user_id = $1", [userId]),
+    pool.query("SELECT contact_id, can_edit FROM staff_contact_assignments WHERE user_id = $1", [userId]),
   ]);
   return {
     unrestricted: false,
@@ -192,6 +262,21 @@ export async function getStaffAssignmentScope(req: Request): Promise<StaffAssign
     contactIds: new Set(contacts.rows.map((row) => Number(row.contact_id))),
     editableContactIds: new Set(contacts.rows.filter((row) => row.can_edit).map((row) => Number(row.contact_id))),
   };
+}
+
+export async function getStaffAssignmentScopeForUserId(userId: string): Promise<StaffAssignmentScope> {
+  const access = await getStaffAccessForUserId(userId);
+  if (access.role === "owner" && access.approvalStatus === "approved") {
+    return {
+      unrestricted: true,
+      staffAdministrator: access.features.staffAdmin,
+      clientIds: new Set(),
+      jobIds: new Set(),
+      contactIds: new Set(),
+      editableContactIds: new Set(),
+    };
+  }
+  return assignmentScopeForUserId(userId, access);
 }
 export function requireStaffAdministrator(req: Request, res: Response, next: NextFunction): void {
   void canAccessFeature(req, "staffAdmin")
@@ -277,14 +362,16 @@ export function registerStaffAccessRoutes(
 
   app.patch("/api/staff-access/:userId/owner-status", async (req, res) => {
     if (!isOwner(req) || req.ownerApprovalStatus === "pending" || req.ownerApprovalStatus === "suspended") {
-      return res.status(403).json({ message: "Active owner access required" });
+      res.status(403).json({ message: "Active owner access required" });
+      return;
     }
     const status = req.body?.approvalStatus;
     const version = req.body?.expectedUpdatedAt;
     if (!["approved", "pending", "suspended"].includes(status)
       || !Object.prototype.hasOwnProperty.call(req.body ?? {}, "expectedUpdatedAt")
       || (version !== null && (typeof version !== "string" || !Number.isFinite(Date.parse(version))))) {
-      return res.status(400).json({ message: "Valid status and access version are required" });
+      res.status(400).json({ message: "Valid status and access version are required" });
+      return;
     }
     const client = await pool.connect();
     try {
@@ -295,7 +382,8 @@ export function registerStaffAccessRoutes(
       const target = await client.query("SELECT id, email FROM auth_users WHERE id = $1 FOR UPDATE", [req.params.userId]);
       if (!target.rows[0] || !isAdminEmail(target.rows[0].email)) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Owner account not found" });
+        res.status(404).json({ message: "Owner account not found" });
+        return;
       }
       const profile = await client.query(
         "SELECT role, approval_status, updated_at FROM staff_access_profiles WHERE user_id = $1 FOR UPDATE",
@@ -304,7 +392,8 @@ export function registerStaffAccessRoutes(
       const currentVersion = profile.rows[0]?.updated_at ?? null;
       if (currentVersion === null ? version !== null : version === null || new Date(currentVersion).getTime() !== new Date(version).getTime()) {
         await client.query("ROLLBACK");
-        return res.status(409).json({ message: "Owner access changed. Reload and try again." });
+        res.status(409).json({ message: "Owner access changed. Reload and try again." });
+        return;
       }
       const explicit = await client.query(
         "SELECT 1 FROM staff_access_audit WHERE target_user_id = $1 AND action = 'owner_status_updated' LIMIT 1",
@@ -329,7 +418,8 @@ export function registerStaffAccessRoutes(
         );
         if (active.rows[0].count < 1) {
           await client.query("ROLLBACK");
-          return res.status(409).json({ message: "The last active owner cannot be set pending or suspended." });
+          res.status(409).json({ message: "The last active owner cannot be set pending or suspended." });
+          return;
         }
       }
       const result = await client.query(
@@ -352,10 +442,12 @@ export function registerStaffAccessRoutes(
       // requests. Revoke on reapproval too so only fresh sessions can resume.
       const { revokePttUserSessions } = await import("./ptt");
       revokePttUserSessions(req.params.userId, String(target.rows[0].email));
-      return res.json({ id: req.params.userId, approvalStatus: status, updatedAt: result.rows[0].updated_at });
+      res.json({ id: req.params.userId, approvalStatus: status, updatedAt: result.rows[0].updated_at });
+      return;
     } catch {
       await client.query("ROLLBACK");
-      return res.status(500).json({ message: "Could not update owner status" });
+      res.status(500).json({ message: "Could not update owner status" });
+      return;
     } finally {
       client.release();
     }
@@ -366,13 +458,16 @@ export function registerStaffAccessRoutes(
     const firstName = normalizeName(req.body?.firstName);
     const lastName = normalizeName(req.body?.lastName);
     if (firstName === null || lastName === null) {
-      return res.status(400).json({ message: "First and last name are required fields" });
+      res.status(400).json({ message: "First and last name are required fields" });
+      return;
     }
     if (!firstName && !lastName) {
-      return res.status(400).json({ message: "Enter at least a first or last name" });
+      res.status(400).json({ message: "Enter at least a first or last name" });
+      return;
     }
     if (firstName.length > 100 || lastName.length > 100) {
-      return res.status(400).json({ message: "Staff names must be 100 characters or fewer" });
+      res.status(400).json({ message: "Staff names must be 100 characters or fewer" });
+      return;
     }
 
     try {
@@ -384,17 +479,20 @@ export function registerStaffAccessRoutes(
         [req.params.userId, firstName || null, lastName || null],
       );
       if (!result.rows[0]) {
-        return res.status(404).json({ message: "Staff user not found" });
+        res.status(404).json({ message: "Staff user not found" });
+        return;
       }
       const row = result.rows[0];
-      return res.json({
+      res.json({
         id: row.id,
         email: row.email,
         firstName: row.first_name,
         lastName: row.last_name,
       });
+      return;
     } catch (error: any) {
-      return res.status(500).json({ message: error?.message || "Could not update staff name" });
+      res.status(500).json({ message: error?.message || "Could not update staff name" });
+      return;
     }
   });
 
@@ -405,19 +503,24 @@ export function registerStaffAccessRoutes(
     const requestedPermissions = req.body?.features;
     const expectedUpdatedAt = req.body?.expectedUpdatedAt;
     if (!STAFF_ROLES.includes(role)) {
-      return res.status(400).json({ message: "Invalid staff role" });
+      res.status(400).json({ message: "Invalid staff role" });
+      return;
     }
     if (!["pending", "approved", "suspended"].includes(approvalStatus)) {
-      return res.status(400).json({ message: "Invalid approval status" });
+      res.status(400).json({ message: "Invalid approval status" });
+      return;
     }
     if (typeof viewVoicemails !== "boolean") {
-      return res.status(400).json({ message: "Voicemail access must be on or off" });
+      res.status(400).json({ message: "Voicemail access must be on or off" });
+      return;
     }
     if (!requestedPermissions || typeof requestedPermissions !== "object" || Array.isArray(requestedPermissions)) {
-      return res.status(400).json({ message: "Feature permissions are required" });
+      res.status(400).json({ message: "Feature permissions are required" });
+      return;
     }
     if (!ALL_STAFF_FEATURES.every((feature) => typeof requestedPermissions[feature] === "boolean")) {
-      return res.status(400).json({ message: "Every feature permission must be explicitly on or off" });
+      res.status(400).json({ message: "Every feature permission must be explicitly on or off" });
+      return;
     }
     if (
       !Object.prototype.hasOwnProperty.call(req.body ?? {}, "expectedUpdatedAt") ||
@@ -426,7 +529,8 @@ export function registerStaffAccessRoutes(
         !Number.isFinite(Date.parse(expectedUpdatedAt))
       ))
     ) {
-      return res.status(400).json({ message: "Expected access version is required" });
+      res.status(400).json({ message: "Expected access version is required" });
+      return;
     }
     const permissions = Object.fromEntries(
       ALL_STAFF_FEATURES
@@ -444,11 +548,13 @@ export function registerStaffAccessRoutes(
         );
         if (!target.rows[0]) {
           await client.query("ROLLBACK");
-          return res.status(404).json({ message: "Staff user not found" });
+          res.status(404).json({ message: "Staff user not found" });
+          return;
         }
         if (isAdminEmail(target.rows[0].email)) {
           await client.query("ROLLBACK");
-          return res.status(403).json({ message: "Owner access cannot be modified" });
+          res.status(403).json({ message: "Owner access cannot be modified" });
+          return;
         }
         const previous = await client.query(
           `SELECT role, can_view_voicemails, approval_status, feature_permissions, updated_at
@@ -457,9 +563,10 @@ export function registerStaffAccessRoutes(
         );
         if (!previous.rows[0]) {
           await client.query("ROLLBACK");
-          return res.status(403).json({
+          res.status(403).json({
             message: "Staff enrollment requires an accepted owner-issued invitation. Invite this person first.",
           });
+          return;
         }
         if (approvalStatus === "approved" && previous.rows[0]?.approval_status !== "approved" && !isOwner(req)) {
           const invited = await client.query(
@@ -468,7 +575,8 @@ export function registerStaffAccessRoutes(
           );
           if (invited.rows[0]) {
             await client.query("ROLLBACK");
-            return res.status(403).json({ message: "Only the owner can approve an invited staff account" });
+            res.status(403).json({ message: "Only the owner can approve an invited staff account" });
+            return;
           }
         }
         const currentUpdatedAt = previous.rows[0]?.updated_at;
@@ -478,10 +586,11 @@ export function registerStaffAccessRoutes(
           : expectedUpdatedAt === null;
         if (!versionMatches) {
           await client.query("ROLLBACK");
-          return res.status(409).json({
+          res.status(409).json({
             message: "This staff member's access changed since you loaded it. Review the latest settings and try again.",
             latestAccess: accessSnapshotFromRow(previous.rows[0]),
           });
+          return;
         }
         const result = await client.query(
           `INSERT INTO staff_access_profiles
@@ -502,7 +611,8 @@ export function registerStaffAccessRoutes(
         );
         if (!result.rows[0]) {
           await client.query("ROLLBACK");
-          return res.status(404).json({ message: "Staff user not found" });
+          res.status(404).json({ message: "Staff user not found" });
+          return;
         }
         const row = result.rows[0];
         const previousAccess = previous.rows[0]
@@ -563,14 +673,16 @@ export function registerStaffAccessRoutes(
       values.every((value) => Number.isSafeInteger(value) && Number(value) > 0) &&
       new Set(values).size === values.length;
     if (!validIds(clientIds) || !validIds(jobIds)) {
-      return res.status(400).json({ message: "Assignments must contain unique positive numeric ids" });
+      res.status(400).json({ message: "Assignments must contain unique positive numeric ids" });
+      return;
     }
     if (contactAssignments !== null && (
       !contactAssignments.every((assignment: any) =>
         assignment && Number.isSafeInteger(assignment.contactId) && assignment.contactId > 0 && typeof assignment.canEdit === "boolean") ||
       new Set(contactAssignments.map((assignment: any) => assignment.contactId)).size !== contactAssignments.length
     )) {
-      return res.status(400).json({ message: "Contact assignments must contain unique contacts and an explicit edit permission" });
+      res.status(400).json({ message: "Contact assignments must contain unique contacts and an explicit edit permission" });
+      return;
     }
     if (
       !Object.prototype.hasOwnProperty.call(req.body ?? {}, "expectedUpdatedAt") ||
@@ -579,7 +691,8 @@ export function registerStaffAccessRoutes(
         !Number.isFinite(Date.parse(expectedUpdatedAt))
       ))
     ) {
-      return res.status(400).json({ message: "Expected assignment version is required" });
+      res.status(400).json({ message: "Expected assignment version is required" });
+      return;
     }
     const normalizedClients = clientIds as number[];
     const normalizedJobs = jobIds as number[];
@@ -589,11 +702,13 @@ export function registerStaffAccessRoutes(
       const target = await client.query("SELECT id, email FROM auth_users WHERE id = $1 FOR UPDATE", [req.params.userId]);
       if (!target.rows[0]) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Staff user not found" });
+        res.status(404).json({ message: "Staff user not found" });
+        return;
       }
       if (isAdminEmail(target.rows[0].email)) {
         await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Owner assignments cannot be modified" });
+        res.status(403).json({ message: "Owner assignments cannot be modified" });
+        return;
       }
       const previousProfile = await client.query(
         `SELECT role, can_view_voicemails, approval_status, feature_permissions, updated_at
@@ -602,9 +717,10 @@ export function registerStaffAccessRoutes(
       );
       if (!previousProfile.rows[0]) {
         await client.query("ROLLBACK");
-        return res.status(403).json({
+        res.status(403).json({
           message: "Staff enrollment requires an accepted owner-issued invitation. Invite this person before assigning records.",
         });
+        return;
       }
       const currentUpdatedAt = previousProfile.rows[0]?.updated_at;
       const [existingClients, existingJobs, existingContacts] = await Promise.all([
@@ -622,7 +738,7 @@ export function registerStaffAccessRoutes(
         : expectedUpdatedAt === null;
       if (!versionMatches) {
         await client.query("ROLLBACK");
-        return res.status(409).json({
+        res.status(409).json({
           message: "This staff member's assignments changed since you loaded them. Review the latest assignments and try again.",
           latestAccess: {
             ...accessSnapshotFromRow(previousProfile.rows[0]),
@@ -636,19 +752,22 @@ export function registerStaffAccessRoutes(
             },
           },
         });
+        return;
       }
       if (normalizedClients.length) {
         const count = await client.query("SELECT COUNT(*)::int count FROM clients WHERE id = ANY($1::int[])", [normalizedClients]);
         if (count.rows[0].count !== normalizedClients.length) {
           await client.query("ROLLBACK");
-          return res.status(400).json({ message: "One or more customers do not exist" });
+          res.status(400).json({ message: "One or more customers do not exist" });
+          return;
         }
       }
       if (normalizedJobs.length) {
         const count = await client.query("SELECT COUNT(*)::int count FROM crm_jobs WHERE id = ANY($1::int[])", [normalizedJobs]);
         if (count.rows[0].count !== normalizedJobs.length) {
           await client.query("ROLLBACK");
-          return res.status(400).json({ message: "One or more jobs do not exist" });
+          res.status(400).json({ message: "One or more jobs do not exist" });
+          return;
         }
       }
       if (normalizedContacts.length) {
@@ -656,7 +775,8 @@ export function registerStaffAccessRoutes(
         const count = await client.query("SELECT COUNT(*)::int count FROM crm_contacts WHERE id = ANY($1::int[])", [ids]);
         if (count.rows[0].count !== ids.length) {
           await client.query("ROLLBACK");
-          return res.status(400).json({ message: "One or more contacts do not exist" });
+          res.status(400).json({ message: "One or more contacts do not exist" });
+          return;
         }
       }
       await client.query("DELETE FROM staff_client_assignments WHERE user_id=$1", [target.rows[0].id]);
@@ -702,10 +822,12 @@ export function registerStaffAccessRoutes(
         [target.rows[0].id, req.dbUser?.id ?? null, JSON.stringify(previousAccess), JSON.stringify(newAccess)],
       );
       await client.query("COMMIT");
-      return res.json({ ...newAccess, updatedAt: updatedProfile.rows[0]?.updated_at ?? null });
+      res.json({ ...newAccess, updatedAt: updatedProfile.rows[0]?.updated_at ?? null });
+      return;
     } catch (error: any) {
       await client.query("ROLLBACK");
-      return res.status(500).json({ message: error?.message || "Could not update staff assignments" });
+      res.status(500).json({ message: error?.message || "Could not update staff assignments" });
+      return;
     } finally {
       client.release();
     }
@@ -714,7 +836,8 @@ export function registerStaffAccessRoutes(
   app.post("/api/staff-access/:userId/recovery-audit", requireStaffAdministrator, async (req, res) => {
     const outcome = req.body?.outcome;
     if (outcome !== "succeeded" && outcome !== "failed") {
-      return res.status(400).json({ message: "Recovery outcome must be succeeded or failed" });
+      res.status(400).json({ message: "Recovery outcome must be succeeded or failed" });
+      return;
     }
 
     const client = await pool.connect();
@@ -726,7 +849,8 @@ export function registerStaffAccessRoutes(
       );
       if (!target.rows[0]) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Staff user not found" });
+        res.status(404).json({ message: "Staff user not found" });
+        return;
       }
 
       await client.query(
@@ -793,11 +917,13 @@ export function registerStaffAccessRoutes(
       }
 
       await client.query("COMMIT");
-      return res.status(204).end();
+      res.status(204).end();
+      return;
     } catch (error: any) {
       await client.query("ROLLBACK");
       console.error("Could not record staff access recovery outcome:", error?.message || error);
-      return res.status(500).json({ message: "Could not record recovery outcome" });
+      res.status(500).json({ message: "Could not record recovery outcome" });
+      return;
     } finally {
       client.release();
     }

@@ -142,6 +142,16 @@ async function pollMailbox(): Promise<number> {
       secure: true,
       auth: { user: settings.user, pass: settings.password },
       logger: false,
+      connectionTimeout: 15_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 30_000,
+      tls: { rejectUnauthorized: true, servername: settings.host },
+    });
+    // ImapFlow emits asynchronous socket errors as EventEmitter events. Without
+    // a listener, a transient provider timeout can terminate the whole API
+    // process instead of failing this poll and allowing the next retry.
+    imap.on("error", () => {
+      logger.warn("Inbound mailbox connection error; the worker will retry.");
     });
     await imap.connect();
     const mailboxLock = await imap.getMailboxLock(settings.mailbox);

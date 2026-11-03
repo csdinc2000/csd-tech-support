@@ -11,7 +11,7 @@ export const EMAIL_CAPACITY_LOW_ABSOLUTE = 100;
 const DEFAULT_CAPACITY_POLL_INTERVAL_MS = 15 * 60_000;
 export const EMAIL_CAPACITY_READING_STALE_AFTER_MS = 30 * 60_000;
 
-export type EmailOperation = "helpdesk" | "invoice" | "invoice reminder" | "marketplace" | "intake" | "staff invite" | "communications";
+export type EmailOperation = "helpdesk" | "invoice" | "invoice reminder" | "marketplace" | "intake" | "staff invite" | "communications" | "referrals";
 export type EmailProvider = "sendgrid" | "smtp";
 
 type HealthStorage = Pick<typeof storage, "getActiveAlerts" | "createAlert" | "updateAlert"> &

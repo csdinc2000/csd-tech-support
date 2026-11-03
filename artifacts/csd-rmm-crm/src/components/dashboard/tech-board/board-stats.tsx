@@ -67,8 +67,13 @@ export function BoardStats({
     return list;
   }, [jobs, appointments, intakes, calls, canViewCalls]);
 
+  // Phones: one swipeable row so the stats never push the board below the fold.
+  // Tablets: a 4-up grid. Wide desktops: every tile on one line.
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7" data-testid="board-stats">
+    <div
+      className="-mx-3 flex snap-x snap-mandatory gap-2 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-4 sm:overflow-visible sm:px-0 sm:pb-0 xl:grid-cols-7"
+      data-testid="board-stats"
+    >
       {stats.map((stat) => {
         const Icon = stat.icon;
         const body = (
@@ -86,22 +91,26 @@ export function BoardStats({
                 {isLoading ? "–" : stat.value}
               </span>
               <span className="block truncate text-xs font-medium text-gray-700">{stat.label}</span>
-              <span className="block truncate text-[11px] text-gray-400">{stat.hint}</span>
+              <span className="hidden truncate text-[11px] text-gray-400 md:block">{stat.hint}</span>
             </span>
           </>
         );
-        const tileClass = "flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 shadow-sm";
+        const tileClass = cn(
+          "flex min-w-[9.5rem] shrink-0 snap-start items-center gap-3 rounded-lg border bg-white px-3 py-2.5 shadow-sm sm:min-w-0",
+          stat.alert ? "border-csd-red/25" : "border-gray-200",
+        );
         return can(stat.feature) ? (
           <Link
             key={stat.id}
             href={stat.href}
+            title={stat.hint}
             className={cn(tileClass, "transition-colors hover:border-csd-red/40 hover:bg-red-50/40")}
             data-testid={`board-stat-${stat.id}`}
           >
             {body}
           </Link>
         ) : (
-          <div key={stat.id} className={tileClass} data-testid={`board-stat-${stat.id}`}>{body}</div>
+          <div key={stat.id} title={stat.hint} className={tileClass} data-testid={`board-stat-${stat.id}`}>{body}</div>
         );
       })}
     </div>

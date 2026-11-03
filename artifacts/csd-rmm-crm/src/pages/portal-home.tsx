@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Wrench,
   Ticket,
@@ -9,6 +10,7 @@ import {
   Phone,
   FileSignature,
   Store,
+  Gift,
 } from "lucide-react";
 import csdLogo from "@assets/cropped-CSD-Logo-New_2_1765066834661.png";
 
@@ -73,6 +75,35 @@ const OPTIONS = [
   },
 ];
 
+type ReferralProgram = { active: boolean; referrerReward: string; friendReward: string };
+
+function ReferralFeature() {
+  const { data } = useQuery<ReferralProgram>({ queryKey: ["/api/portal/referrals/program"], retry: false });
+  if (data && !data.active) return null;
+  return (
+    <Link
+      href="/portal/referrals"
+      className="group flex flex-col gap-4 rounded-xl bg-gray-950 p-5 text-white shadow-md transition hover:shadow-lg sm:flex-row sm:items-center sm:p-6"
+      data-testid="card-refer-friend"
+    >
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-red-600">
+        <Gift className="h-6 w-6" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-red-400">Refer a friend</span>
+        <span className="mt-1 block text-lg font-semibold">
+          {data ? `Give ${data.friendReward}. Get ${data.referrerReward}.` : "Share the help. Get rewarded."}
+        </span>
+        <span className="mt-1 block text-sm text-gray-300">Send friends and family to us — you're rewarded after their first service is done.</span>
+      </span>
+      <span className="inline-flex items-center gap-1 text-sm font-medium text-red-300 group-hover:text-white">
+        Get my referral link
+        <ArrowRight className="h-4 w-4" />
+      </span>
+    </Link>
+  );
+}
+
 export default function PortalHome() {
   return (
     <div className="min-h-screen bg-gray-50">
@@ -99,6 +130,8 @@ export default function PortalHome() {
             </p>
           </div>
         </div>
+
+        <ReferralFeature />
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {OPTIONS.map((opt) => {

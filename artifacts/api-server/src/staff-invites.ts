@@ -57,7 +57,10 @@ async function verifiedClerkIdentity(req: Request) {
 }
 
 function requireInviteAdmin(req: Request, res: any, next: any) {
-  if (!isAdminUser(req)) return res.status(403).json({ message: "Owner access required" });
+  if (!isAdminUser(req)) {
+    res.status(403).json({ message: "Owner access required" });
+    return;
+  }
   next();
 }
 
@@ -256,9 +259,10 @@ export function registerStaffInviteRoutes(
   });
   // Retire the direct identity-repair action: staff enrollment requires an invitation.
   app.post("/api/staff-access/:userId/helpdesk-identity", requireAdmin, (_req, res) => {
-    return res.status(410).json({
+    res.status(410).json({
       message: "Direct sign-in linking is no longer available. Send an owner-issued staff invitation and have the recipient accept it with the invited verified email.",
     });
+    return;
   });
   registerStaffAccountDiscoveryRoute(app, requireAdmin, options.listAccounts);
   app.get("/api/staff-access/invites", requireAdmin, async (_req, res) => {
@@ -268,17 +272,25 @@ export function registerStaffInviteRoutes(
                 email_delivery_status, email_delivery_at
          FROM staff_invites ORDER BY created_at DESC LIMIT 100`,
       );
-      return res.json(result.rows.map(publicInvite));
+      res.json(result.rows.map(publicInvite));
+      return;
     } catch (error: any) {
-      return res.status(500).json({ message: error?.message || "Could not load staff invitations" });
+      res.status(500).json({ message: error?.message || "Could not load staff invitations" });
+      return;
     }
   });
 
   app.post("/api/staff-access/invites", requireAdmin, async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const role = req.body?.role;
-    if (!email) return res.status(400).json({ message: "Enter a valid email address" });
-    if (!STAFF_ROLES.has(role)) return res.status(400).json({ message: "Select a valid staff role" });
+    if (!email) {
+      res.status(400).json({ message: "Enter a valid email address" });
+      return;
+    }
+    if (!STAFF_ROLES.has(role)) {
+      res.status(400).json({ message: "Select a valid staff role" });
+      return;
+    }
 
     const token = randomBytes(32).toString("base64url");
     const tokenHash = hashToken(token);
@@ -294,9 +306,10 @@ export function registerStaffInviteRoutes(
       );
       if (existingAccess.rows[0]) {
         await client.query("ROLLBACK");
-        return res.status(409).json({
+        res.status(409).json({
           message: "This person already has a staff account. Change their role or status in Staff Access instead of sending another invitation.",
         });
+        return;
       }
       await client.query(
         `UPDATE staff_invites SET revoked_at = NOW()
@@ -365,14 +378,16 @@ export function registerStaffInviteRoutes(
           "Staff invitation email status could not be loaded",
         );
       }
-      return res.status(201).json({
+      res.status(201).json({
         invite: publicInvite({ ...result.rows[0], ...inviteStatus }),
         invitePath,
         emailSent,
       });
+      return;
     } catch (error: any) {
       await client.query("ROLLBACK");
-      return res.status(500).json({ message: "Could not create staff invitation" });
+      res.status(500).json({ message: "Could not create staff invitation" });
+      return;
     } finally {
       client.release();
     }
@@ -380,7 +395,8 @@ export function registerStaffInviteRoutes(
 
   app.post("/api/staff-access/invites/:id/revoke", requireAdmin, async (req, res) => {
     if (typeof req.params.id !== "string" || !/^\d+$/.test(req.params.id)) {
-      return res.status(400).json({ message: "Invalid invitation" });
+      res.status(400).json({ message: "Invalid invitation" });
+      return;
     }
     try {
       const result = await pool.query(
@@ -390,53 +406,76 @@ export function registerStaffInviteRoutes(
                    email_delivery_status, email_delivery_at`,
         [req.params.id],
       );
-      if (!result.rows[0]) return res.status(409).json({ message: "Invitation is no longer active" });
-      return res.json(publicInvite(result.rows[0]));
+      if (!result.rows[0]) {
+        res.status(409).json({ message: "Invitation is no longer active" });
+        return;
+      }
+      res.json(publicInvite(result.rows[0]));
+      return;
     } catch (error: any) {
-      return res.status(500).json({ message: error?.message || "Could not revoke staff invitation" });
+      res.status(500).json({ message: error?.message || "Could not revoke staff invitation" });
+      return;
     }
   });
 
   app.post("/api/public/staff-invites/validate", limitInviteRequests, async (req, res) => {
     const token = tokenFromRequest(req.body?.token);
-    if (!token) return res.status(404).json({ message: "Invitation not found" });
+    if (!token) {
+      res.status(404).json({ message: "Invitation not found" });
+      return;
+    }
     try {
       const result = await pool.query(
         `SELECT id, email, role, created_at, expires_at, accepted_at, revoked_at
          FROM staff_invites WHERE token_hash = $1`,
         [hashToken(token)],
       );
-      if (!result.rows[0]) return res.status(404).json({ message: "Invitation not found" });
+      if (!result.rows[0]) {
+        res.status(404).json({ message: "Invitation not found" });
+        return;
+      }
       const invite = publicInvite(result.rows[0]);
       if (invite.status !== "pending") {
-        return res.status(410).json({ message: `This invitation has ${invite.status}` });
+        res.status(410).json({ message: `This invitation has ${invite.status}` });
+        return;
       }
-      return res.json(invite);
+      res.json(invite);
+      return;
     } catch (error: any) {
-      return res.status(500).json({ message: "Could not validate invitation" });
+      res.status(500).json({ message: "Could not validate invitation" });
+      return;
     }
   });
 
   app.post("/api/public/staff-invites/accept", limitInviteRequests, requireSignedIn, async (req, res) => {
     const token = tokenFromRequest(req.body?.token);
-    if (!token) return res.status(404).json({ message: "Invitation not found" });
+    if (!token) {
+      res.status(404).json({ message: "Invitation not found" });
+      return;
+    }
     const firstName = typeof req.body?.firstName === "string" ? req.body.firstName.trim() : "";
     const lastName = typeof req.body?.lastName === "string" ? req.body.lastName.trim() : "";
     if (!firstName || !lastName || firstName.length > 100 || lastName.length > 100) {
-      return res.status(400).json({ message: "Enter your first and last name (100 characters or fewer each)" });
+      res.status(400).json({ message: "Enter your first and last name (100 characters or fewer each)" });
+      return;
     }
     let identity;
     try {
       identity = await verifyIdentity(req);
     } catch {
-      return res.status(503).json({ message: "Could not verify your account email. Try again shortly." });
+      res.status(503).json({ message: "Could not verify your account email. Try again shortly." });
+      return;
     }
     if (!identity) {
-      return res.status(403).json({ message: "Your verified account email is required to accept this invitation" });
+      res.status(403).json({ message: "Your verified account email is required to accept this invitation" });
+      return;
     }
     const { email } = identity;
     const clerkUserId = clerkUserIdForRequest(req);
-    if (!clerkUserId) return res.status(401).json({ message: "Authentication required" });
+    if (!clerkUserId) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
 
     const client = await pool.connect();
     try {
@@ -449,19 +488,23 @@ export function registerStaffInviteRoutes(
       const invite = inviteResult.rows[0];
       if (!invite) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Invitation not found" });
+        res.status(404).json({ message: "Invitation not found" });
+        return;
       }
       if (invite.accepted_at || invite.revoked_at || new Date(invite.expires_at).getTime() <= Date.now()) {
         await client.query("ROLLBACK");
-        return res.status(410).json({ message: "This invitation is no longer active" });
+        res.status(410).json({ message: "This invitation is no longer active" });
+        return;
       }
       if (normalizeEmail(invite.email) !== email) {
         await client.query("ROLLBACK");
-        return res.status(403).json({ message: "Sign in with the email address this invitation was sent to" });
+        res.status(403).json({ message: "Sign in with the email address this invitation was sent to" });
+        return;
       }
       if (!req.dbUser?.id) {
         await client.query("ROLLBACK");
-        return res.status(401).json({ message: "Authentication required" });
+        res.status(401).json({ message: "Authentication required" });
+        return;
       }
 
       const existing = await client.query(
@@ -470,7 +513,8 @@ export function registerStaffInviteRoutes(
       );
       if (existing.rows.length > 1) {
         await client.query("ROLLBACK");
-        return res.status(409).json({ message: "Multiple accounts have this email. Ask the owner to resolve the duplicates." });
+        res.status(409).json({ message: "Multiple accounts have this email. Ask the owner to resolve the duplicates." });
+        return;
       }
       let targetUserId = req.dbUser.id;
       if (existing.rows[0]) {
@@ -483,7 +527,8 @@ export function registerStaffInviteRoutes(
         );
         if (previousId.startsWith("user_") || (linked.rows[0] && linked.rows[0].clerk_user_id !== clerkUserId)) {
           await client.query("ROLLBACK");
-          return res.status(409).json({ message: "This email belongs to another sign-in account. Ask the owner for help." });
+          res.status(409).json({ message: "This email belongs to another sign-in account. Ask the owner for help." });
+          return;
         }
         const oldProfile = await client.query(
           "SELECT approval_status FROM staff_access_profiles WHERE user_id = $1 FOR UPDATE",
@@ -491,7 +536,8 @@ export function registerStaffInviteRoutes(
         );
         if (oldProfile.rows[0] && oldProfile.rows[0].approval_status !== "pending") {
           await client.query("ROLLBACK");
-          return res.status(409).json({ message: "This account already has staff access. Ask the owner to update its role." });
+          res.status(409).json({ message: "This account already has staff access. Ask the owner to update its role." });
+          return;
         }
         // Link only an empty bridge created by this sign-in. Preserve the
         // bridge itself so no associated history can be cascade-deleted.
@@ -509,7 +555,8 @@ export function registerStaffInviteRoutes(
         );
         if (!emptyBridge.rows[0]) {
           await client.query("ROLLBACK");
-          return res.status(409).json({ message: "This sign-in account has existing records. Ask the owner to resolve the account link." });
+          res.status(409).json({ message: "This sign-in account has existing records. Ask the owner to resolve the account link." });
+          return;
         }
         await client.query(
           "INSERT INTO auth_user_clerk_links (clerk_user_id, auth_user_id) VALUES ($1, $2)",
@@ -523,7 +570,8 @@ export function registerStaffInviteRoutes(
       );
       if (profile.rows[0] && profile.rows[0].approval_status !== "pending") {
         await client.query("ROLLBACK");
-        return res.status(409).json({ message: "This account already has staff access. Ask the owner to update your role." });
+        res.status(409).json({ message: "This account already has staff access. Ask the owner to update your role." });
+        return;
       }
       await client.query(
         `UPDATE auth_users SET email = $2,
@@ -558,14 +606,16 @@ export function registerStaffInviteRoutes(
         [targetUserId, invite.invited_by, JSON.stringify({ role: invite.role, approval_status: "pending" })],
       );
       await client.query("COMMIT");
-      return res.json({ role: invite.role, approvalStatus: "pending" });
+      res.json({ role: invite.role, approvalStatus: "pending" });
+      return;
     } catch (error: any) {
       await client.query("ROLLBACK");
-      return res.status(error?.code === "23505" ? 409 : 500).json({
+      res.status(error?.code === "23505" ? 409 : 500).json({
         message: error?.code === "23505"
           ? "This email is already attached to another account. Ask the owner for help."
           : "Could not accept staff invitation",
       });
+      return;
     } finally {
       client.release();
     }
@@ -575,7 +625,8 @@ export function registerStaffInviteRoutes(
   // Only an owner may explicitly link/create one for an approved staff account.
   app.post("/api/staff-access/:userId/helpdesk-assignee", requireAdmin, async (req, res) => {
     if (typeof req.params.userId !== "string" || !req.params.userId) {
-      return res.status(400).json({ message: "Invalid staff account" });
+      res.status(400).json({ message: "Invalid staff account" });
+      return;
     }
     const client = await pool.connect();
     try {
@@ -589,11 +640,13 @@ export function registerStaffInviteRoutes(
       const staff = target.rows[0];
       if (!staff) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ message: "Staff account not found" });
+        res.status(404).json({ message: "Staff account not found" });
+        return;
       }
       if (staff.approval_status !== "approved") {
         await client.query("ROLLBACK");
-        return res.status(409).json({ message: "Approve this staff account before linking a helpdesk assignee" });
+        res.status(409).json({ message: "Approve this staff account before linking a helpdesk assignee" });
+        return;
       }
       const alreadyLinked = await client.query(
         `SELECT h.id, h.username AS name, h.email
@@ -603,15 +656,17 @@ export function registerStaffInviteRoutes(
       );
       if (alreadyLinked.rows[0]) {
         await client.query("COMMIT");
-        return res.json(alreadyLinked.rows[0]);
+        res.json(alreadyLinked.rows[0]);
+        return;
       }
       const email = normalizeEmail(staff.email);
       if (!email) {
         await client.query("ROLLBACK");
-        return res.status(409).json({
+        res.status(409).json({
           code: "STAFF_EMAIL_REQUIRED",
           message: "This account is approved, but has no valid sign-in email on file. Confirm the person's verified sign-in identity before linking a helpdesk assignee.",
         });
+        return;
       }
       const existing = await client.query(
         `SELECT id, username AS name, email FROM users
@@ -620,7 +675,8 @@ export function registerStaffInviteRoutes(
       );
       if (existing.rows.length > 1) {
         await client.query("ROLLBACK");
-        return res.status(409).json({ message: "Multiple helpdesk assignees use this email. Resolve the duplicates before linking." });
+        res.status(409).json({ message: "Multiple helpdesk assignees use this email. Resolve the duplicates before linking." });
+        return;
       }
       let assignee = existing.rows[0];
       if (!assignee) {
@@ -648,14 +704,16 @@ export function registerStaffInviteRoutes(
         [staff.id, req.dbUser?.id ?? null, JSON.stringify({ helpdeskAssigneeId: assignee.id })],
       );
       await client.query("COMMIT");
-      return res.json(assignee);
+      res.json(assignee);
+      return;
     } catch (error: any) {
       await client.query("ROLLBACK");
-      return res.status(error?.code === "23505" ? 409 : 500).json({
+      res.status(error?.code === "23505" ? 409 : 500).json({
         message: error?.code === "23505"
           ? "This helpdesk assignee is already linked to another staff account."
           : "Could not link helpdesk assignee",
       });
+      return;
     } finally {
       client.release();
     }

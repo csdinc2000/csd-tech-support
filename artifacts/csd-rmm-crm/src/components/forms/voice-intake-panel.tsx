@@ -12,6 +12,7 @@ import { Slider } from "@/components/ui/slider";
 import { apiRequest } from "@/lib/queryClient";
 import { useIntakeSpeech, type ListenError } from "@/hooks/use-intake-speech";
 import {
+  csdIntakeFieldSchema,
   csdIntakeFormSchema,
   deviceTypeOptions,
   howDidYouHearOptions,
@@ -128,10 +129,13 @@ export function VoiceIntakePanel({ form, services, onExit, onSubmitRequest, onVo
     switch (field) {
       case "companyName": return Boolean(values.companyName?.trim());
       case "streetAddress": return Boolean(values.streetAddress?.trim());
+      case "phoneNumber":
+      case "emailAddress":
+        return Boolean(values.phoneNumber?.trim() || values.emailAddress?.trim());
       // Preselected by default, so only count it once someone actually chose.
       case "contactPreference": return touched.current.has("contactPreference");
       default: {
-        const shape = csdIntakeFormSchema.shape[field as keyof typeof csdIntakeFormSchema.shape];
+        const shape = csdIntakeFieldSchema.shape[field as keyof typeof csdIntakeFieldSchema.shape];
         return shape ? shape.safeParse(values[field as keyof CsdIntakeFormData]).success : false;
       }
     }

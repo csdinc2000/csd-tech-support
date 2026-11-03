@@ -555,7 +555,10 @@ export function registerSharedInboxRoutes(app: Express): void {
   app.get("/api/sms/inbox/:threadKey", async (req, res): Promise<any> => {
     try {
       const timeline = await conversationTimeline(threadKeyFor(req.params.threadKey));
-      if (!timeline) return res.status(404).json({ error: "Conversation not found" });
+      if (!timeline) {
+        res.status(404).json({ error: "Conversation not found" });
+        return;
+      }
       res.json(timeline);
     } catch (error: any) {
       console.error("GET /api/sms/inbox/:threadKey failed:", error);
@@ -566,9 +569,15 @@ export function registerSharedInboxRoutes(app: Express): void {
   app.post("/api/sms/inbox/:threadKey/read", async (req, res): Promise<any> => {
     try {
       const userId = req.dbUser?.id;
-      if (!userId) return res.status(401).json({ error: "Sign in required" });
+      if (!userId) {
+        res.status(401).json({ error: "Sign in required" });
+        return;
+      }
       const conv = await pool.query(`SELECT id FROM sms_conversations WHERE thread_key = $1`, [threadKeyFor(req.params.threadKey)]);
-      if (!conv.rows[0]) return res.status(404).json({ error: "Conversation not found" });
+      if (!conv.rows[0]) {
+        res.status(404).json({ error: "Conversation not found" });
+        return;
+      }
       await markRead(conv.rows[0].id, userId);
       res.json({ success: true });
     } catch (error: any) {
@@ -580,14 +589,18 @@ export function registerSharedInboxRoutes(app: Express): void {
     try {
       const { status, assignedUserId } = req.body ?? {};
       if (status !== undefined && status !== "open" && status !== "done") {
-        return res.status(400).json({ error: "status must be open or done" });
+        res.status(400).json({ error: "status must be open or done" });
+        return;
       }
       if (assignedUserId !== undefined && assignedUserId !== null) {
         const ok = await pool.query(
           `SELECT 1 FROM staff_access_profiles WHERE user_id = $1 AND approval_status = 'approved'`,
           [String(assignedUserId)],
         );
-        if (!ok.rows.length) return res.status(400).json({ error: "Assignee must be approved staff" });
+        if (!ok.rows.length) {
+          res.status(400).json({ error: "Assignee must be approved staff" });
+          return;
+        }
       }
       const result = await pool.query(
         `UPDATE sms_conversations SET
@@ -601,7 +614,10 @@ export function registerSharedInboxRoutes(app: Express): void {
          RETURNING id, status, assigned_user_id`,
         [threadKeyFor(req.params.threadKey), status ?? null, assignedUserId !== undefined, assignedUserId ?? null, req.dbUser?.id ?? null],
       );
-      if (!result.rows[0]) return res.status(404).json({ error: "Conversation not found" });
+      if (!result.rows[0]) {
+        res.status(404).json({ error: "Conversation not found" });
+        return;
+      }
       res.json({ conversationId: result.rows[0].id, status: result.rows[0].status, assignedUserId: result.rows[0].assigned_user_id });
     } catch (error: any) {
       console.error("PATCH /api/sms/inbox/:threadKey failed:", error);
@@ -613,10 +629,19 @@ export function registerSharedInboxRoutes(app: Express): void {
   app.post("/api/sms/inbox/:threadKey/notes", async (req, res): Promise<any> => {
     try {
       const body = String(req.body?.body ?? "").trim();
-      if (!body) return res.status(400).json({ error: "Note text is required" });
-      if (body.length > NOTE_MAX_LENGTH) return res.status(400).json({ error: "Note is too long" });
+      if (!body) {
+        res.status(400).json({ error: "Note text is required" });
+        return;
+      }
+      if (body.length > NOTE_MAX_LENGTH) {
+        res.status(400).json({ error: "Note is too long" });
+        return;
+      }
       const conv = await pool.query(`SELECT id FROM sms_conversations WHERE thread_key = $1`, [threadKeyFor(req.params.threadKey)]);
-      if (!conv.rows[0]) return res.status(404).json({ error: "Conversation not found" });
+      if (!conv.rows[0]) {
+        res.status(404).json({ error: "Conversation not found" });
+        return;
+      }
       const who = actor(req);
       const result = await pool.query(
         `INSERT INTO sms_conversation_notes (conversation_id, author_user_id, author_name, body)

@@ -50,3 +50,16 @@ test("shared SMS inbox routes require staff authentication and the communication
     assert.equal(requiredFeatureForApiPath(path, method), "communications");
   }
 });
+
+test("customer and CRM APIs require the admin-controlled CRM feature", () => {
+  for (const path of [
+    "/api/clients",
+    "/api/clients/12",
+    "/api/clients/12/overview",
+    "/api/crm/jobs",
+    "/api/crm/contacts",
+    "/api/crm/leads",
+  ]) {
+    assert.equal(requiredFeatureForApiPath(path, "GET"), "crm", `${path} must require CRM access`);
+  }
+});

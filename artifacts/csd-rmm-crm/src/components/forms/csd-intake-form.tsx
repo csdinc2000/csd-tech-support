@@ -19,6 +19,7 @@ import { DevicePhotoField } from "@/components/forms/device-photo-field";
 import { VoiceIntakePanel, type VoiceSubmitResult } from "@/components/forms/voice-intake-panel";
 import type { PendingPhoto } from "@/lib/marketplace";
 import type { Service } from "@shared/schema";
+import { clearStoredReferralCode, storedReferralCode, storedUtmCampaign } from "@/lib/utm-capture";
 import {
   csdIntakeFormSchema,
   deviceTypeOptions,
@@ -106,8 +107,21 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
   const serviceId = form.watch("serviceId");
   const scheduleNow = form.watch("scheduleNow");
   const isFromActiveCall = form.watch("isFromActiveCall");
+  const phoneNumber = form.watch("phoneNumber") || "";
+  const emailAddress = form.watch("emailAddress") || "";
+  const contactPreference = form.watch("contactPreference");
+  const contactPreferenceTouched = useRef(false);
 
   const selectedService = services.find(s => s.id === Number(serviceId));
+
+  useEffect(() => {
+    if (contactPreferenceTouched.current) return;
+    if (!phoneNumber.trim() && emailAddress.trim() && contactPreference !== "email") {
+      form.setValue("contactPreference", "email");
+    } else if (phoneNumber.trim() && !emailAddress.trim() && contactPreference === "email") {
+      form.setValue("contactPreference", "call");
+    }
+  }, [contactPreference, emailAddress, form, phoneNumber]);
 
   // Drop slot if user changes service
   if (selectedSlot && selectedService && !selectedSlot.resourceIds) {
@@ -172,6 +186,8 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
           device_photo: devicePhoto ? { dataBase64: devicePhoto.dataBase64 } : undefined,
           problem_description: data.problemDescription,
           how_did_you_hear_about_us: data.howDidYouHear,
+          utm_campaign: storedUtmCampaign(),
+          referral_code: storedReferralCode(),
           from_active_call: data.isFromActiveCall,
           call_notes: data.callNotes,
           sms_consent: data.smsConsent,
@@ -179,6 +195,8 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
           intake_channel: voiceUsed.current ? "voice" : undefined,
         });
         intakeData = await intakeRes.json();
+        // The referral was credited to this request; don't credit later ones.
+        clearStoredReferralCode();
       } catch (err) {
         await releaseLock();
         throw err;
@@ -381,7 +399,7 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Full Name *</FormLabel>
-                    <FormControl><Input placeholder="John Smith" {...field} /></FormControl>
+                    <FormControl><Input autoComplete="name" placeholder="John Smith" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -409,8 +427,9 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
                 name="phoneNumber"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Mobile Phone Number *</FormLabel>
-                    <FormControl><Input placeholder="(555) 123-4567" {...field} /></FormControl>
+                  <FormLabel>Mobile Phone Number</FormLabel>
+                  <FormControl><Input type="tel" autoComplete="tel" placeholder="(555) 123-4567" {...field} /></FormControl>
+                  <FormDescription>Provide a phone number or an email address. Phone is needed for calls or texts.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -421,8 +440,9 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
                 name="emailAddress"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email Address *</FormLabel>
-                    <FormControl><Input type="email" placeholder="john@example.com" {...field} /></FormControl>
+                  <FormLabel>Email Address</FormLabel>
+                  <FormControl><Input type="email" autoComplete="email" placeholder="john@example.com" {...field} /></FormControl>
+                  <FormDescription>Email is needed only if you prefer email contact or do not provide a phone number.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -484,10 +504,13 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
                 name="contactPreference"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Preferred Contact Method *</FormLabel>
+                    <FormLabel>Preferred Contact Method</FormLabel>
                     <FormControl>
                       <RadioGroup
-                        onValueChange={field.onChange}
+                        onValueChange={(value) => {
+                          contactPreferenceTouched.current = true;
+                          field.onChange(value);
+                        }}
                         value={field.value}
                         className="flex space-x-6"
                       >
@@ -627,10 +650,11 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
                 name="deviceBrandModel"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Device Brand & Model *</FormLabel>
+                    <FormLabel>Device Brand & Model</FormLabel>
                     <FormControl>
                       <Input placeholder="e.g., Dell Inspiron 15, HP Pavilion, MacBook Pro" {...field} />
                     </FormControl>
+                    <FormDescription>Optional — skip this if you are not sure.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -643,7 +667,7 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
                 name="operatingSystem"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Operating System *</FormLabel>
+                    <FormLabel>Operating System</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value || undefined}>
                       <FormControl>
                         <SelectTrigger><SelectValue placeholder="Select operating system" /></SelectTrigger>
@@ -654,6 +678,7 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
                         ))}
                       </SelectContent>
                     </Select>
+                    <FormDescription>Optional — choose one if you know it.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -667,11 +692,12 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
                     <FormLabel>Describe the problem you're experiencing *</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Please describe what's happening with your computer. Include any error messages you see..."
+                        placeholder="A short description is enough. Include any error message if you know it."
                         className="h-32"
                         {...field}
                       />
                     </FormControl>
+                    <FormDescription>A brief description is required; you can add more details later.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -729,7 +755,7 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
                 name="howDidYouHear"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>How did you hear about Computer Systems Depot? *</FormLabel>
+                    <FormLabel>How did you hear about Computer Systems Depot?</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value || undefined}>
                       <FormControl>
                         <SelectTrigger><SelectValue placeholder="Please select" /></SelectTrigger>
@@ -740,6 +766,7 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
                         ))}
                       </SelectContent>
                     </Select>
+                    <FormDescription>Optional.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

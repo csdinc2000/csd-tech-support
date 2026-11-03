@@ -190,8 +190,12 @@ before(async () => {
   app.get("/test/contact-scope/:id", async (req, res) => {
     const scope = await getStaffAssignmentScope(req);
     const contactId = Number(req.params.id);
-    if (!scope.unrestricted && !scope.contactIds.has(contactId)) return res.status(404).json({ error: "Contact not found" });
-    return res.json({ canEdit: scope.unrestricted || scope.editableContactIds.has(contactId) });
+    if (!scope.unrestricted && !scope.contactIds.has(contactId)) {
+      res.status(404).json({ error: "Contact not found" });
+      return;
+    }
+    res.json({ canEdit: scope.unrestricted || scope.editableContactIds.has(contactId) });
+    return;
   });
   registerStaffAccessRoutes(app, { isOwner: (req) => req.dbUser?.id === ids.owner });
   app.use(enforceAssignedResourceBoundary);

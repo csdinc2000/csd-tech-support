@@ -46,6 +46,8 @@ import { routeParam } from "./lib/route-params";
 import { enrichNewTicket } from "./routes/helpdesk";
 import { invalidContactPhone } from "./phone-validation";
 import { forwardedCallerId } from "./voice-routing";
+import { getStaffAssignmentScope } from "./staff-access";
+import { filterCallHistoryForScope } from "./call-history-scope";
 
 type FlowStep =
   | { type: "say"; text: string; voice?: string }
@@ -168,14 +170,16 @@ export function registerTwilioTracking(app: Express): void {
     if (!flow) {
       const t = new twilio.twiml.VoiceResponse();
       t.say("Call flow not found.").hangup();
-      return res.type("text/xml").send(t.toString());
+      res.type("text/xml").send(t.toString());
+      return;
     }
     const steps = (flow.steps as unknown as FlowStep[]) || [];
     const step = steps[idx];
     if (!step) {
       const t = new twilio.twiml.VoiceResponse();
       t.hangup();
-      return res.type("text/xml").send(t.toString());
+      res.type("text/xml").send(t.toString());
+      return;
     }
     const fromNumber = (req.query.from as string) || (req.body?.From as string) || "";
     const trackingPhone = (req.query.tn as string) || (req.body?.To as string) || "";
@@ -284,7 +288,10 @@ export function registerTwilioTracking(app: Express): void {
       const id = parseInt(req.params.id, 10);
       const data = updateTrackingNumberSchema.parse(req.body);
       const row = await updateTrackingNumber(id, data);
-      if (!row) return res.status(404).json({ error: "not found" });
+      if (!row) {
+        res.status(404).json({ error: "not found" });
+        return;
+      }
       res.json(row);
     } catch (e: any) {
       res.status(400).json({ error: e?.message || "invalid" });
@@ -421,7 +428,10 @@ export function registerTwilioTracking(app: Express): void {
       const id = parseInt(req.params.id, 10);
       const data = updateCallFlowSchema.parse(req.body);
       const row = await updateCallFlow(id, data);
-      if (!row) return res.status(404).json({ error: "not found" });
+      if (!row) {
+        res.status(404).json({ error: "not found" });
+        return;
+      }
       res.json(row);
     } catch (e: any) { res.status(400).json({ error: e?.message || "invalid" }); }
   });
@@ -462,7 +472,10 @@ export function registerTwilioTracking(app: Express): void {
       // One central number: customers only ever see the business line, so a
       // requested tracking-number `from` is ignored.
       const fromNumber = await getTwilioFromPhoneNumber();
-      if (!fromNumber) return res.status(400).json({ error: "no from number configured" });
+      if (!fromNumber) {
+        res.status(400).json({ error: "no from number configured" });
+        return;
+      }
       const msg = await client.messages.create({ to: toE164(to), from: fromNumber, body });
 
       let trackingId: number | null = null;
@@ -486,7 +499,9 @@ export function registerTwilioTracking(app: Express): void {
   app.get("/api/call-tracking/calls", async (req, res) => {
     try {
       const limit = Math.min(Math.max(parseInt((req.query.limit as string) || "100", 10) || 100, 1), 500);
-      res.json(await getRecentCalls(limit));
+      const scope = await getStaffAssignmentScope(req);
+      const calls = await getRecentCalls(limit);
+      res.json(filterCallHistoryForScope(calls, scope));
     } catch (e: any) {
       req.log.error({ err: e }, "List tracked calls failed");
       res.status(500).json({ error: "Unable to load call activity" });
@@ -496,19 +511,35 @@ export function registerTwilioTracking(app: Express): void {
   app.post("/api/call-tracking/calls/:id/contact", async (req, res) => {
     try {
       const id = Number.parseInt(routeParam(req.params.id, "id"), 10);
-      if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid call ID" });
+      if (!Number.isFinite(id)) {
+        res.status(400).json({ error: "Invalid call ID" });
+        return;
+      }
       const phoneError = invalidContactPhone(req.body);
-      if (phoneError) return res.status(400).json({ error: phoneError });
+      if (phoneError) {
+        res.status(400).json({ error: phoneError });
+        return;
+      }
       const contactInput = insertCrmContactSchema.parse(req.body);
       const contact = await createAndAssociateCallContact(id, contactInput);
       res.status(201).json(contact);
     } catch (e: any) {
       if (e instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid contact information", details: e.issues });
+        res.status(400).json({ error: "Invalid contact information", details: e.issues });
+        return;
       }
-      if (e?.message === "CALL_NOT_FOUND") return res.status(404).json({ error: "Call not found" });
-      if (e?.message === "CALL_ALREADY_ASSOCIATED") return res.status(409).json({ error: "This call already has a contact" });
-      if (e?.message === "CLIENT_NOT_FOUND") return res.status(400).json({ error: "Customer account not found" });
+      if (e?.message === "CALL_NOT_FOUND") {
+        res.status(404).json({ error: "Call not found" });
+        return;
+      }
+      if (e?.message === "CALL_ALREADY_ASSOCIATED") {
+        res.status(409).json({ error: "This call already has a contact" });
+        return;
+      }
+      if (e?.message === "CLIENT_NOT_FOUND") {
+        res.status(400).json({ error: "Customer account not found" });
+        return;
+      }
       req.log.error({ err: e }, "Create contact from tracked call failed");
       res.status(500).json({ error: "Unable to create contact from this call" });
     }
@@ -517,22 +548,31 @@ export function registerTwilioTracking(app: Express): void {
   app.post("/api/call-tracking/calls/:id/ticket", async (req, res) => {
     try {
       const id = Number.parseInt(routeParam(req.params.id, "id"), 10);
-      if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid call ID" });
+      if (!Number.isFinite(id)) {
+        res.status(400).json({ error: "Invalid call ID" });
+        return;
+      }
       const ticketInput = insertTicketSchema.parse(req.body);
       const intake = req.body.intake === undefined ? undefined : callTicketIntakeSchema.parse(req.body.intake);
       const result = await createAndAssociateCallTicket(id, ticketInput, intake);
       const ticket = result.created ? await enrichNewTicket(result.ticket, { preserveAssignment: !!intake }) : result.ticket;
-      return res.status(result.created ? 201 : 200).json({
+      res.status(result.created ? 201 : 200).json({
         ...ticket, alreadyLinked: !result.created,
         assignedTechName: result.assignedTechName, effectiveSmsConsent: result.effectiveSmsConsent,
       });
+      return;
     } catch (e: any) {
       if (e instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid ticket information", details: e.issues });
+        res.status(400).json({ error: "Invalid ticket information", details: e.issues });
+        return;
       }
-      if (e?.message === "CALL_NOT_FOUND") return res.status(404).json({ error: "Call not found" });
+      if (e?.message === "CALL_NOT_FOUND") {
+        res.status(404).json({ error: "Call not found" });
+        return;
+      }
       req.log.error({ err: e }, "Create ticket from tracked call failed");
-      return res.status(500).json({ error: "Unable to create a ticket from this call" });
+      res.status(500).json({ error: "Unable to create a ticket from this call" });
+      return;
     }
   });
 

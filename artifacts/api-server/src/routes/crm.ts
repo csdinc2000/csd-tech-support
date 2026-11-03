@@ -30,7 +30,8 @@ router.get("/deals", async (req: Request, res: Response) => {
   try {
     const stage = req.query.stage as string | undefined;
     if (stage && !(DEAL_STAGES as readonly string[]).includes(stage)) {
-      return res.status(400).json({ message: `Invalid stage. Expected one of: ${DEAL_STAGES.join(", ")}` });
+      res.status(400).json({ message: `Invalid stage. Expected one of: ${DEAL_STAGES.join(", ")}` });
+      return;
     }
     const deals = stage ? await storage.getCrmDealsByStage(stage) : await storage.getCrmDeals();
     res.json(deals);
@@ -48,7 +49,8 @@ router.post("/deals", async (req: Request, res: Response) => {
     res.status(201).json(deal);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ message: "Invalid deal data", errors: error.issues });
+      res.status(400).json({ message: "Invalid deal data", errors: error.issues });
+      return;
     }
     console.error("Failed to create deal:", error);
     res.status(500).json({ message: "Failed to create deal" });
@@ -57,10 +59,16 @@ router.post("/deals", async (req: Request, res: Response) => {
 
 router.get("/deals/:id", async (req: Request, res: Response) => {
   const id = parseInt(routeParam(req.params.id, "id"), 10);
-  if (isNaN(id)) return res.status(400).json({ message: "Invalid deal id" });
+  if (isNaN(id)) {
+    res.status(400).json({ message: "Invalid deal id" });
+    return;
+  }
   try {
     const deal = await storage.getCrmDeal(id);
-    if (!deal) return res.status(404).json({ message: "Deal not found" });
+    if (!deal) {
+      res.status(404).json({ message: "Deal not found" });
+      return;
+    }
     res.json(deal);
   } catch (error) {
     console.error("Failed to fetch deal:", error);
@@ -72,16 +80,23 @@ router.get("/deals/:id", async (req: Request, res: Response) => {
 // won → auto-ticket rule can't be bypassed.
 router.patch("/deals/:id", async (req: Request, res: Response) => {
   const id = parseInt(routeParam(req.params.id, "id"), 10);
-  if (isNaN(id)) return res.status(400).json({ message: "Invalid deal id" });
+  if (isNaN(id)) {
+    res.status(400).json({ message: "Invalid deal id" });
+    return;
+  }
   try {
     const data = updateCrmDealSchema.omit({ stage: true }).parse(req.body);
     const deal = await storage.updateCrmDeal(id, data);
-    if (!deal) return res.status(404).json({ message: "Deal not found" });
+    if (!deal) {
+      res.status(404).json({ message: "Deal not found" });
+      return;
+    }
     publishPipelineEvent({ type: "deal_updated", dealId: deal.id, stage: deal.stage });
     res.json(deal);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ message: "Invalid deal data", errors: error.issues });
+      res.status(400).json({ message: "Invalid deal data", errors: error.issues });
+      return;
     }
     console.error("Failed to update deal:", error);
     res.status(500).json({ message: "Failed to update deal" });
@@ -95,18 +110,25 @@ const stageChangeSchema = z.object({
 
 router.patch("/deals/:id/stage", async (req: Request, res: Response) => {
   const id = parseInt(routeParam(req.params.id, "id"), 10);
-  if (isNaN(id)) return res.status(400).json({ message: "Invalid deal id" });
+  if (isNaN(id)) {
+    res.status(400).json({ message: "Invalid deal id" });
+    return;
+  }
   try {
     const { stage, technicianId } = stageChangeSchema.parse(req.body);
     const result = await changeDealStage(id, stage, {
       technicianId,
       performedBy: requesterEmail(req),
     });
-    if (!result) return res.status(404).json({ message: "Deal not found" });
+    if (!result) {
+      res.status(404).json({ message: "Deal not found" });
+      return;
+    }
     res.json({ deal: result.deal, onboardingTicket: result.onboardingTicket });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ message: "Invalid stage change", errors: error.issues });
+      res.status(400).json({ message: "Invalid stage change", errors: error.issues });
+      return;
     }
     console.error("Failed to change deal stage:", error);
     res.status(500).json({ message: "Failed to change deal stage" });
@@ -115,10 +137,16 @@ router.patch("/deals/:id/stage", async (req: Request, res: Response) => {
 
 router.delete("/deals/:id", async (req: Request, res: Response) => {
   const id = parseInt(routeParam(req.params.id, "id"), 10);
-  if (isNaN(id)) return res.status(400).json({ message: "Invalid deal id" });
+  if (isNaN(id)) {
+    res.status(400).json({ message: "Invalid deal id" });
+    return;
+  }
   try {
     const deleted = await storage.deleteCrmDeal(id);
-    if (!deleted) return res.status(404).json({ message: "Deal not found" });
+    if (!deleted) {
+      res.status(404).json({ message: "Deal not found" });
+      return;
+    }
     publishPipelineEvent({ type: "deal_deleted", dealId: id });
     res.status(204).end();
   } catch (error) {
@@ -130,10 +158,16 @@ router.delete("/deals/:id", async (req: Request, res: Response) => {
 // 360° interaction history: calls + voicemails + tickets + CRM activity.
 router.get("/deals/:id/timeline", async (req: Request, res: Response) => {
   const id = parseInt(routeParam(req.params.id, "id"), 10);
-  if (isNaN(id)) return res.status(400).json({ message: "Invalid deal id" });
+  if (isNaN(id)) {
+    res.status(400).json({ message: "Invalid deal id" });
+    return;
+  }
   try {
     const deal = await storage.getCrmDeal(id);
-    if (!deal) return res.status(404).json({ message: "Deal not found" });
+    if (!deal) {
+      res.status(404).json({ message: "Deal not found" });
+      return;
+    }
     const timeline = await getDealTimeline(deal);
     res.json({ deal, timeline });
   } catch (error) {
@@ -151,18 +185,28 @@ const linkSchema = z.object({
 
 router.post("/deals/:id/link", async (req: Request, res: Response) => {
   const id = parseInt(routeParam(req.params.id, "id"), 10);
-  if (isNaN(id)) return res.status(400).json({ message: "Invalid deal id" });
+  if (isNaN(id)) {
+    res.status(400).json({ message: "Invalid deal id" });
+    return;
+  }
   try {
     const { itemType, itemId, attach } = linkSchema.parse(req.body);
     const deal = await storage.getCrmDeal(id);
-    if (!deal) return res.status(404).json({ message: "Deal not found" });
+    if (!deal) {
+      res.status(404).json({ message: "Deal not found" });
+      return;
+    }
     const ok = await linkItemToDeal(itemType, itemId, attach ? id : null);
-    if (!ok) return res.status(404).json({ message: `${itemType} ${itemId} not found` });
+    if (!ok) {
+      res.status(404).json({ message: `${itemType} ${itemId} not found` });
+      return;
+    }
     publishPipelineEvent({ type: "deal_linked", dealId: id });
     res.json({ success: true });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ message: "Invalid link request", errors: error.issues });
+      res.status(400).json({ message: "Invalid link request", errors: error.issues });
+      return;
     }
     console.error("Failed to link item to deal:", error);
     res.status(500).json({ message: "Failed to link item to deal" });

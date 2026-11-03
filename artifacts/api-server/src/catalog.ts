@@ -368,7 +368,8 @@ export function registerCatalogRoutes(app: Express): void {
         const item = await itemFromProduct(stripe, product);
         if (item) items.push(item);
       }
-      return res.json({ items });
+      res.json({ items });
+      return;
     } catch (error) {
       return sendRouteError(res, error, "Could not load catalog items");
     }
@@ -376,7 +377,10 @@ export function registerCatalogRoutes(app: Express): void {
 
   app.post("/api/catalog/items", requireCatalogOwner, async (req, res) => {
     const parsed = createItemSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid catalog item" });
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid catalog item" });
+      return;
+    }
     try {
       const stripe = await getUncachableStripeClient();
       const input = parsed.data;
@@ -396,7 +400,8 @@ export function registerCatalogRoutes(app: Express): void {
         unit_amount: input.unitAmountCents,
       });
       const updated = await stripe.products.update(product.id, { default_price: price.id });
-      return res.status(201).json(catalogProduct(updated, price));
+      res.status(201).json(catalogProduct(updated, price));
+      return;
     } catch (error) {
       return sendRouteError(res, error, "Could not create catalog item");
     }
@@ -404,12 +409,18 @@ export function registerCatalogRoutes(app: Express): void {
 
   app.patch("/api/catalog/items/:id", requireCatalogOwner, async (req, res) => {
     const parsed = updateItemSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid catalog item" });
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid catalog item" });
+      return;
+    }
     try {
       const stripe = await getUncachableStripeClient();
       const productId = String(req.params.id);
       const current = await getCatalogItem(stripe, productId);
-      if (!current) return res.status(404).json({ error: "Catalog item not found" });
+      if (!current) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
 
       const metadata = {
         [catalogMetadataKey]: "true",
@@ -432,9 +443,13 @@ export function registerCatalogRoutes(app: Express): void {
         await stripe.prices.update(price.id, { active: false });
         price = newPrice;
       }
-      return res.json(catalogProduct(product, price));
+      res.json(catalogProduct(product, price));
+      return;
     } catch (error) {
-      if ((error as any)?.statusCode === 404) return res.status(404).json({ error: "Catalog item not found" });
+      if ((error as any)?.statusCode === 404) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
       return sendRouteError(res, error, "Could not update catalog item");
     }
   });
@@ -444,11 +459,18 @@ export function registerCatalogRoutes(app: Express): void {
       const stripe = await getUncachableStripeClient();
       const productId = String(req.params.id);
       const item = await getCatalogItem(stripe, productId);
-      if (!item) return res.status(404).json({ error: "Catalog item not found" });
+      if (!item) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
       await stripe.products.update(productId, { active: false });
-      return res.json({ ...item, active: false });
+      res.json({ ...item, active: false });
+      return;
     } catch (error) {
-      if ((error as any)?.statusCode === 404) return res.status(404).json({ error: "Catalog item not found" });
+      if ((error as any)?.statusCode === 404) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
       return sendRouteError(res, error, "Could not archive catalog item");
     }
   });
@@ -462,7 +484,8 @@ export function registerCatalogRoutes(app: Express): void {
         const item = await itemFromProduct(stripe, product);
         if (item?.active && item.published) items.push(item);
       }
-      return res.json({ items });
+      res.json({ items });
+      return;
     } catch (error) {
       return sendRouteError(res, error, "Could not load catalog items");
     }
@@ -472,10 +495,17 @@ export function registerCatalogRoutes(app: Express): void {
     try {
       const stripe = await getUncachableStripeClient();
       const item = await activeCatalogItem(stripe, String(req.params.id));
-      if (!item) return res.status(404).json({ error: "Catalog item not found" });
-      return res.json(item);
+      if (!item) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
+      res.json(item);
+      return;
     } catch (error) {
-      if ((error as any)?.statusCode === 404) return res.status(404).json({ error: "Catalog item not found" });
+      if ((error as any)?.statusCode === 404) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
       return sendRouteError(res, error, "Could not load catalog item");
     }
   });
@@ -484,7 +514,10 @@ export function registerCatalogRoutes(app: Express): void {
     try {
       const stripe = await getUncachableStripeClient();
       const item = await activeCatalogItem(stripe, String(req.params.id));
-      if (!item) return res.status(404).json({ error: "Catalog item not found" });
+      if (!item) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
       const purchaseId = randomUUID();
       const created = await pool.query(
         `INSERT INTO catalog_purchases (id, stripe_product_id, stripe_price_id)
@@ -512,7 +545,8 @@ export function registerCatalogRoutes(app: Express): void {
             WHERE id=$1`,
           [created.rows[0].id, session.id],
         );
-        return res.json({ url: session.url });
+        res.json({ url: session.url });
+        return;
       } catch (error) {
         await pool.query(
           "UPDATE catalog_purchases SET status='checkout_failed', updated_at=NOW() WHERE id=$1",
@@ -521,26 +555,39 @@ export function registerCatalogRoutes(app: Express): void {
         throw error;
       }
     } catch (error) {
-      if ((error as any)?.statusCode === 404) return res.status(404).json({ error: "Catalog item not found" });
+      if ((error as any)?.statusCode === 404) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
       return sendRouteError(res, error, "Could not start checkout");
     }
   });
 
   app.post("/api/portal/catalog/items/:id/inquire", inquiryLimiter, async (req, res) => {
     const parsed = inquirySchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid inquiry" });
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid inquiry" });
+      return;
+    }
     try {
       const input = parsed.data;
       // Check the durable request first: a retry after a lost response must not
       // repeat the notification or create a second CRM activity.
       const prior = await pool.query("SELECT stripe_product_id FROM catalog_inquiries WHERE id=$1", [input.requestId]);
       if (prior.rows[0]) {
-        if (prior.rows[0].stripe_product_id !== String(req.params.id)) return res.status(409).json({ error: "Request ID already used" });
-        return res.status(202).json({ received: true });
+        if (prior.rows[0].stripe_product_id !== String(req.params.id)) {
+          res.status(409).json({ error: "Request ID already used" });
+          return;
+        }
+        res.status(202).json({ received: true });
+        return;
       }
       const stripe = await getUncachableStripeClient();
       const item = await activeCatalogItem(stripe, String(req.params.id));
-      if (!item) return res.status(404).json({ error: "Catalog item not found" });
+      if (!item) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
       const client = await pool.connect();
       let inserted = false;
       try {
@@ -573,7 +620,10 @@ export function registerCatalogRoutes(app: Express): void {
       } finally {
         client.release();
       }
-      if (!inserted) return res.status(202).json({ received: true });
+      if (!inserted) {
+        res.status(202).json({ received: true });
+        return;
+      }
       // The CRM record is authoritative. Mail is a best-effort notification,
       // never a reason for the buyer to submit the request a second time.
       const to = process.env.CSD_ADMIN_EMAIL || "support@computersystemsdepot.com";
@@ -587,9 +637,13 @@ export function registerCatalogRoutes(app: Express): void {
           operation: "marketplace",
         },
       ); } catch (error) { logger.warn({ error: error instanceof Error ? error.name : "unknown" }, "Catalog inquiry notification failed"); }
-      return res.status(202).json({ received: true });
+      res.status(202).json({ received: true });
+      return;
     } catch (error) {
-      if ((error as any)?.statusCode === 404) return res.status(404).json({ error: "Catalog item not found" });
+      if ((error as any)?.statusCode === 404) {
+        res.status(404).json({ error: "Catalog item not found" });
+        return;
+      }
       return sendRouteError(res, error, "Could not send inquiry");
     }
   });
@@ -608,7 +662,8 @@ export function registerCatalogRoutes(app: Express): void {
            LEFT JOIN invoices i ON i.id=q.invoice_id
           ORDER BY q.created_at DESC LIMIT 500`,
       );
-      return res.json({ inquiries: result.rows });
+      res.json({ inquiries: result.rows });
+      return;
     } catch (error) { return sendRouteError(res, error, "Could not load inquiries"); }
   });
 
@@ -617,40 +672,49 @@ export function registerCatalogRoutes(app: Express): void {
       contactId: z.number().int().positive().optional(),
       clientId: z.number().int().positive().optional(),
     }).strict().refine((value) => !(value.contactId && value.clientId)).safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: "Invalid contact selection" });
-    if (!z.uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "Invalid inquiry ID" });
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid contact selection" });
+      return;
+    }
+    if (!z.uuid().safeParse(req.params.id).success) {
+      res.status(400).json({ error: "Invalid inquiry ID" });
+      return;
+    }
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const result = await client.query("SELECT * FROM catalog_inquiries WHERE id=$1 FOR UPDATE", [req.params.id]);
       const inquiry = result.rows[0];
-      if (!inquiry) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Inquiry not found" }); }
+      if (!inquiry) { await client.query("ROLLBACK"); res.status(404).json({ error: "Inquiry not found" }); return; }
       if (inquiry.invoice_id != null) {
         await client.query("ROLLBACK");
-        return res.status(409).json({
+        res.status(409).json({
           error: "This inquiry is already linked to an invoice and cannot be relinked",
           invoiceId: Number(inquiry.invoice_id),
         });
+        return;
       }
       let contactId = parsed.data.contactId;
       if (contactId) {
         const contact = await client.query("SELECT id FROM crm_contacts WHERE id=$1", [contactId]);
-        if (!contact.rows[0]) { await client.query("ROLLBACK"); return res.status(400).json({ error: "Contact not found" }); }
+        if (!contact.rows[0]) { await client.query("ROLLBACK"); res.status(400).json({ error: "Contact not found" }); return; }
       } else {
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [crmIdentity(inquiry.requester_email)]);
         if (parsed.data.clientId) {
           const account = await client.query("SELECT id FROM clients WHERE id=$1", [parsed.data.clientId]);
-          if (!account.rows[0]) { await client.query("ROLLBACK"); return res.status(400).json({ error: "Customer account not found" }); }
+          if (!account.rows[0]) { await client.query("ROLLBACK"); res.status(400).json({ error: "Customer account not found" }); return; }
         }
         const phone = inquiry.requester_phone ? toValidE164(inquiry.requester_phone) : null;
         if (inquiry.requester_phone && !phone) {
           await client.query("ROLLBACK");
-          return res.status(400).json({ error: "This phone number needs correction before creating a contact. Select an existing contact instead." });
+          res.status(400).json({ error: "This phone number needs correction before creating a contact. Select an existing contact instead." });
+          return;
         }
         const existing = await client.query("SELECT id FROM crm_contacts WHERE lower(btrim(email))=$1 LIMIT 2", [crmIdentity(inquiry.requester_email)]);
         if (existing.rows.length) {
           await client.query("ROLLBACK");
-          return res.status(409).json({ error: "A contact with this email exists. Select the correct contact instead." });
+          res.status(409).json({ error: "A contact with this email exists. Select the correct contact instead." });
+          return;
         }
         const created = await client.query(
           "INSERT INTO crm_contacts (full_name, email, mobile_phone, client_id) VALUES ($1,$2,$3,$4) RETURNING id",
@@ -670,7 +734,8 @@ export function registerCatalogRoutes(app: Express): void {
       }
       await client.query("UPDATE catalog_inquiries SET crm_contact_id=$2 WHERE id=$1", [inquiry.id, contactId]);
       await client.query("COMMIT");
-      return res.json({ contactId });
+      res.json({ contactId });
+      return;
     } catch (error) {
       await client.query("ROLLBACK");
       return sendRouteError(res, error, "Could not resolve inquiry");
@@ -692,7 +757,8 @@ export function registerCatalogRoutes(app: Express): void {
           ORDER BY created_at DESC
           LIMIT 500`,
       );
-      return res.json({ orders: result.rows });
+      res.json({ orders: result.rows });
+      return;
     } catch (error) {
       return sendRouteError(res, error, "Could not load catalog orders");
     }

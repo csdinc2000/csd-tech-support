@@ -91,7 +91,10 @@ export function registerBookingRoutes(app: Express) {
   app.get("/api/booking/services/:slug", async (req: Request, res: Response) => {
     try {
       const service = await storage.getServiceBySlug(routeParam(req.params.slug, "slug"));
-      if (!service) return res.status(404).json({ error: "Service not found" });
+      if (!service) {
+        res.status(404).json({ error: "Service not found" });
+        return;
+      }
       res.json(service);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -104,7 +107,8 @@ export function registerBookingRoutes(app: Express) {
     try {
       const parsed = availabilityQuerySchema.safeParse(req.query);
       if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.flatten() });
+        res.status(400).json({ error: parsed.error.flatten() });
+        return;
       }
       const slots = await computeAvailableSlots(parsed.data);
       res.json({ slots });
@@ -122,21 +126,28 @@ export function registerBookingRoutes(app: Express) {
     try {
       const parsed = createLockSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.flatten() });
+        res.status(400).json({ error: parsed.error.flatten() });
+        return;
       }
       const { serviceId, sessionId, timezone } = parsed.data;
       const requestedStart = new Date(parsed.data.startsAt);
       if (isNaN(requestedStart.getTime())) {
-        return res.status(400).json({ error: "Invalid startsAt" });
+        res.status(400).json({ error: "Invalid startsAt" });
+        return;
       }
       if (requestedStart.getTime() <= Date.now()) {
-        return res.status(400).json({ error: "Slot start is in the past" });
+        res.status(400).json({ error: "Slot start is in the past" });
+        return;
       }
 
       const service = await storage.getService(serviceId);
-      if (!service) return res.status(404).json({ error: "Service not found" });
+      if (!service) {
+        res.status(404).json({ error: "Service not found" });
+        return;
+      }
       if (!service.isActive || !service.isPubliclyBookable) {
-        return res.status(400).json({ error: "Service is not bookable" });
+        res.status(400).json({ error: "Service is not bookable" });
+        return;
       }
 
       // Recompute slots for the date (in client's tz) containing the requested start
@@ -144,7 +155,8 @@ export function registerBookingRoutes(app: Express) {
       const slots = await computeAvailableSlots({ serviceId, date, timezone });
       const match = slots.find(s => new Date(s.startsAt).getTime() === requestedStart.getTime());
       if (!match) {
-        return res.status(409).json({ error: "Slot is no longer available" });
+        res.status(409).json({ error: "Slot is no longer available" });
+        return;
       }
 
       const startsAt = new Date(match.startsAt);
@@ -175,7 +187,10 @@ export function registerBookingRoutes(app: Express) {
   app.delete("/api/booking/locks/:token", async (req: Request, res: Response) => {
     try {
       const lock = await storage.getBookingSlotLockByToken(routeParam(req.params.token, "token"));
-      if (!lock) return res.status(404).json({ error: "Lock not found" });
+      if (!lock) {
+        res.status(404).json({ error: "Lock not found" });
+        return;
+      }
       await storage.deleteBookingSlotLock(lock.id);
       res.status(204).end();
     } catch (err: any) {
@@ -190,7 +205,8 @@ export function registerBookingRoutes(app: Express) {
     try {
       const parsed = confirmAppointmentSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: parsed.error.flatten() });
+        res.status(400).json({ error: parsed.error.flatten() });
+        return;
       }
       const data = parsed.data;
       // This endpoint is deliberately public. A caller must never be able to
@@ -200,7 +216,8 @@ export function registerBookingRoutes(app: Express) {
         typeof (req as any).isAuthenticated === "function" && (req as any).isAuthenticated();
       const staffContactId = authenticated && isAdminUser(req) ? data.contactId : undefined;
       if (staffContactId != null && !(await storage.getCrmContact(staffContactId))) {
-        return res.status(400).json({ error: "CRM contact not found" });
+        res.status(400).json({ error: "CRM contact not found" });
+        return;
       }
 
       const result = await db.transaction(async (tx) => {
@@ -366,9 +383,15 @@ export function registerBookingRoutes(app: Express) {
   app.get("/api/booking/appointments", async (req: Request, res: Response) => {
     try {
       const parsed = listAppointmentsQuerySchema.safeParse(req.query);
-      if (!parsed.success) return res.status(400).json({ error: "from/to must be ISO timestamps" });
+      if (!parsed.success) {
+        res.status(400).json({ error: "from/to must be ISO timestamps" });
+        return;
+      }
       const { from, to, status } = parsed.data;
-      if (from && to && to <= from) return res.status(400).json({ error: "to must be after from" });
+      if (from && to && to <= from) {
+        res.status(400).json({ error: "to must be after from" });
+        return;
+      }
       const scope = await getStaffAssignmentScope(req);
       const conditions = [] as any[];
       if (from) conditions.push(gte(appointments.startsAt, from));
@@ -396,7 +419,10 @@ export function registerBookingRoutes(app: Express) {
   app.get("/api/booking/appointments/:reference", async (req: Request, res: Response) => {
     try {
       const a = await storage.getAppointmentByReference(routeParam(req.params.reference, "reference"));
-      if (!a) return res.status(404).json({ error: "Appointment not found" });
+      if (!a) {
+        res.status(404).json({ error: "Appointment not found" });
+        return;
+      }
       // `appointments.contactId` is a person, not an account. Preserve it and
       // include the resolved account only when the person is linked.
       const contact = a.contactId == null ? undefined : await storage.getCrmContact(a.contactId);

@@ -4,29 +4,68 @@ import { z } from "zod";
 // form and the voice intake assistant so both use one set of rules.
 
 // CSD Intake form validation schema
-export const csdIntakeFormSchema = z.object({
-  customerName: z.string().min(2, "Name must be at least 2 characters"),
-  companyName: z.string().optional(),
-  phoneNumber: z.string().min(10, "Please enter a valid phone number"),
-  emailAddress: z.string().email("Please enter a valid email address"),
-  streetAddress: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  zip: z.string().optional(),
-  contactPreference: z.enum(["call", "text", "email"], {
-    required_error: "Please select your preferred contact method"
-  }),
+const phoneNumberSchema = z.string().trim().default("").refine((value) => {
+  if (!value) return true;
+  if (!/^\+?[0-9().\-\s]+$/.test(value)) return false;
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+}, "Please enter a valid phone number");
+
+const emailAddressSchema = z.string().trim().default("").refine((value) => {
+  return !value || z.string().email().safeParse(value).success;
+}, "Please enter a valid email address");
+
+export const csdIntakeFieldSchema = z.object({
+  customerName: z.string().trim().min(1, "Please enter your name"),
+  companyName: z.string().trim().default(""),
+  phoneNumber: phoneNumberSchema,
+  emailAddress: emailAddressSchema,
+  streetAddress: z.string().trim().default(""),
+  city: z.string().trim().default(""),
+  state: z.string().trim().default(""),
+  zip: z.string().trim().default(""),
+  contactPreference: z.enum(["call", "text", "email"]).default("call"),
   serviceId: z.coerce.number().int().positive({ message: "Please select a service" }),
-  deviceType: z.string().min(1, "Please select your device type"),
-  deviceBrandModel: z.string().min(1, "Please enter your device brand and model"),
-  operatingSystem: z.string().min(1, "Please select your operating system"),
-  problemDescription: z.string().min(10, "Please describe your problem (minimum 10 characters)"),
-  howDidYouHear: z.string().min(1, "Please tell us how you heard about us"),
-  isFromActiveCall: z.boolean(),
-  callNotes: z.string().optional(),
-  scheduleNow: z.boolean(),
+  deviceType: z.string().trim().min(1, "Please select your device type"),
+  deviceBrandModel: z.string().trim().default(""),
+  operatingSystem: z.string().trim().default(""),
+  problemDescription: z.string().trim().min(1, "Please briefly describe the problem"),
+  howDidYouHear: z.string().trim().default(""),
+  isFromActiveCall: z.boolean().default(false),
+  callNotes: z.string().trim().default(""),
+  scheduleNow: z.boolean().default(false),
   // SMS consent is optional (must be voluntary) and defaults to unchecked.
   smsConsent: z.boolean().default(false),
+});
+
+export const csdIntakeFormSchema = csdIntakeFieldSchema.superRefine((data, context) => {
+  if (!data.phoneNumber && !data.emailAddress) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["phoneNumber"],
+      message: "Enter a phone number or email address.",
+    });
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["emailAddress"],
+      message: "Enter a phone number or email address.",
+    });
+    return;
+  }
+
+  if (data.contactPreference === "email" && !data.emailAddress) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["emailAddress"],
+      message: "Add an email address for email contact.",
+    });
+  } else if (data.contactPreference !== "email" && !data.phoneNumber) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["phoneNumber"],
+      message: "Add a phone number for calls or text messages.",
+    });
+  }
 });
 
 export type CsdIntakeFormData = z.infer<typeof csdIntakeFormSchema>;

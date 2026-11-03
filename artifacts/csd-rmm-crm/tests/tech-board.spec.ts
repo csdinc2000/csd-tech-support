@@ -138,10 +138,25 @@ test("filters active jobs and pages the schedule by day", async ({ page }) => {
   await schedule.getByRole("button", { name: "Today" }).click();
   await expect(schedule.locator(SCHEDULE_ROWS)).toHaveCount(3);
 
-  // Narrow screens stack the columns instead of squeezing them.
+  // Phones and tablets show one column at a time behind a segmented switcher.
   await page.setViewportSize({ width: 400, height: 900 });
   await expect(page.getByTestId("board-active-jobs")).toBeVisible();
+  await expect(page.getByTestId("board-schedule")).toBeHidden();
+  await expect(page.getByTestId("board-pane-jobs")).toHaveAttribute("aria-selected", "true");
   await page.screenshot({ path: "test-results/tech-board-mobile.png", fullPage: true });
+  await page.getByTestId("board-pane-activity").click();
+  await expect(page.getByTestId("board-activity")).toBeVisible();
+  await expect(page.getByTestId("board-active-jobs")).toBeHidden();
+  await expect(page.getByTestId("board-activity").getByText("Priya Natarajan")).toBeVisible();
+
+  // Tablet: still one pane; desktop: all three columns and no switcher.
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await expect(page.getByTestId("board-pane-switcher")).toBeVisible();
+  await page.screenshot({ path: "test-results/tech-board-tablet.png", fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.getByTestId("board-pane-switcher")).toBeHidden();
+  await expect(page.getByTestId("board-active-jobs")).toBeVisible();
+  await expect(page.getByTestId("board-schedule")).toBeVisible();
 });
 
 test("hides the call log for staff without communications access", async ({ page }) => {

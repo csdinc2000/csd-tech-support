@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { format } from "date-fns";
 import { Link } from "wouter";
 import {
@@ -18,8 +18,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { cn } from "@/lib/utils";
 import { Pill } from "./column";
 import { ServiceRequestEmailDialog } from "./service-request-email-dialog";
-import { CallViaCsdButton } from "@/components/communications/call-via-csd-button";
-import { useAdminAccess } from "@/hooks/use-admin-access";
+import { CallViaCsdButtonView } from "@/components/communications/call-via-csd-button";
+import type { StaffFeature } from "@/hooks/use-admin-access";
 import {
   APPOINTMENT_TONE,
   CALL_TONE,
@@ -54,14 +54,17 @@ export function BoardDetailDialog({
   selection,
   contacts,
   onClose,
+  can = () => true,
 }: {
   selection: BoardSelection | null;
   contacts: ContactIndex;
   onClose: () => void;
+  /** Resolved by the page so the dialog stays provider-free. */
+  can?: (feature: StaffFeature) => boolean;
 }) {
   const [emailIntake, setEmailIntake] = useState<BoardIntake | null>(null);
   return (
-    <>
+    <BoardAccessContext.Provider value={can}>
       <Dialog open={selection !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
         <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0" data-testid="board-detail">
           {selection?.kind === "job" && <JobDetail job={selection.item} contacts={contacts} />}
@@ -73,7 +76,7 @@ export function BoardDetailDialog({
         </DialogContent>
       </Dialog>
       {emailIntake && <ServiceRequestEmailDialog key={emailIntake.id} intake={emailIntake} onClose={() => setEmailIntake(null)} />}
-    </>
+    </BoardAccessContext.Provider>
   );
 }
 
@@ -161,12 +164,14 @@ function LongText({ children, emphasis }: { children: string | null | undefined;
   );
 }
 
+const BoardAccessContext = createContext<(feature: StaffFeature) => boolean>(() => true);
+
 function ContactLinks({ phone, email, contactId }: { phone?: string | null; email?: string | null; contactId?: number | null }) {
-  const { can } = useAdminAccess();
+  const can = useContext(BoardAccessContext);
   return (
     <>
-      {phone && (
-        <CallViaCsdButton phone={phone} contactId={contactId ?? undefined} label="Call from app" />
+      {phone && can("communications") && (
+        <CallViaCsdButtonView phone={phone} contactId={contactId ?? undefined} label="Call from app" />
       )}
       {email && can("communications") && (
         <Button asChild variant="outline" size="sm">
@@ -377,7 +382,10 @@ function CallDetail({ call }: { call: BoardCall }) {
       status={<Pill tone={CALL_TONE[call.status] ?? CALL_TONE.completed} className="text-xs">{humanize(call.status)}</Pill>}
       actions={
         <>
-          <ContactLinks phone={call.fromNumber} />
+          <ContactLinks
+            phone={call.direction === "outbound" ? call.toNumber : call.fromNumber}
+            contactId={call.contactId}
+          />
           {call.clientId != null && <OpenRecord href={`/crm/customers/${call.clientId}`} label="Customer record" />}
           {call.supportTicketId != null && <OpenRecord href={`/tickets?ticket=${call.supportTicketId}`} label={call.supportTicketNumber ?? "Ticket"} />}
           <OpenRecord href="/admin/call-tracking" label="Open call activity" />
@@ -386,7 +394,7 @@ function CallDetail({ call }: { call: BoardCall }) {
     >
       <Facts>
         <Fact label="Caller" value={call.contactName ?? "Unknown caller"} />
-        <Fact label="Customer account" value={call.clientName ?? "—"} />
+        <Fact label="Customer account" value={call.clientName || "Not linked to a customer account"} />
         <Fact label="From" value={formatPhone(call.fromNumber)} mono />
         <Fact label="To" value={call.trackingNumber ? `${formatPhone(call.toNumber)} (tracking)` : formatPhone(call.toNumber)} mono />
         <Fact label="Time" value={when(call.createdAt)} />

@@ -15,6 +15,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { z } from "zod";
 import { CheckCircle2 } from "lucide-react";
 import { SMS_CONSENT_TEXT, SMS_BUSINESS_PHONE } from "@/components/forms/csd-intake-form";
+import { clearStoredReferralCode, storedReferralCode, storedUtmCampaign } from "@/lib/utm-capture";
 
 // Website & App project intake. Posts to the same public POST /api/intake
 // endpoint as the repair intake form, so a submission lands in the CRM as a
@@ -195,6 +196,8 @@ export default function WebAppIntakeForm({ className, onSuccess }: WebAppIntakeF
         device_type: data.platform,
         problem_description: buildProjectBrief(data),
         how_did_you_hear_about_us: data.howDidYouHear,
+        utm_campaign: storedUtmCampaign(),
+        referral_code: storedReferralCode(),
         sms_consent: data.smsConsent,
         sms_consent_text: data.smsConsent ? SMS_CONSENT_TEXT : null,
       });
@@ -202,6 +205,7 @@ export default function WebAppIntakeForm({ className, onSuccess }: WebAppIntakeF
     },
     onSuccess: (result) => {
       intakeSubmissionId.current = crypto.randomUUID();
+      clearStoredReferralCode();
       setIsSubmitted(true);
       toast({
         title: "Project request received",

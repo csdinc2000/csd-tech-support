@@ -815,7 +815,10 @@ export function registerTwilioForwarding(
   app.get("/webhooks/voice/greeting-audio", async (_req: Request, res: Response) => {
     try {
       const audio = await getGreetingAudio();
-      if (!audio) return res.status(404).send("No custom greeting");
+      if (!audio) {
+        res.status(404).send("No custom greeting");
+        return;
+      }
       res.setHeader("Content-Type", audio.contentType);
       res.setHeader("Cache-Control", "no-cache");
       res.send(audio.buf);

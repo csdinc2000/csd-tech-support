@@ -3,6 +3,7 @@
 - [PTT RoIP bridge](ptt-roip-bridge.md) — the physical radio boundary uses a single-instance Twilio SIP/PCMU bridge mapped to the Dispatch talk group.
 - [Twilio webhook verification](twilio-webhook-verification.md) — every Twilio callback must share one production-strict verifier; local bypasses must never apply in production.
 - [PTT telemetry privacy](ptt-telemetry-privacy.md) — historical relay health stores only sanitized outcomes; never retain credentials or user, peer, IP, or endpoint identifiers.
+- [PTT live call visibility](ptt-live-call-visibility.md) — administrators can see call participants and status, but not monitor live call audio.
 - [Client history identity safety](client-history-identity-safety.md) — communication fallback matching requires a globally unique canonical identity; raw Twilio content remains admin-only.
 - [Twilio inbound messaging routing](twilio-inbound-messaging-routing.md) — the CSD A2P Messaging Service must defer inbound handling to each sender number’s webhook.
 - [Dashboard data integrity](dashboard-data-integrity.md) — operational device counts include only provider-connected endpoints; never present seeded rows or availability as uptime.

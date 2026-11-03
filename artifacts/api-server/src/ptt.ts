@@ -491,7 +491,10 @@ function getSessionUser(req: Request): PttUser {
 export function registerPttRoutes(app: Express) {
   registerRoipRoutes(app);
   app.get("/api/ptt/telemetry", requireAuth, async (req, res) => {
-    if (!isAdminUser(req)) return res.status(403).json({ error: "Owner access required" });
+    if (!isAdminUser(req)) {
+      res.status(403).json({ error: "Owner access required" });
+      return;
+    }
 
     const hoursRaw = Number.parseInt(String(req.query.hours ?? "24"), 10);
     const hours = [24, 168, 720].includes(hoursRaw) ? hoursRaw : 24;
@@ -542,7 +545,7 @@ export function registerPttRoutes(app: Express) {
         ),
       ]);
       const totals = summary.rows[0] ?? { connected: 0, relay: 0, failed: 0 };
-      return res.json({
+      res.json({
         filters: { hours, channelId, bucket },
         summary: {
           connected: totals.connected,
@@ -554,9 +557,11 @@ export function registerPttRoutes(app: Express) {
         failureReasons: reasons.rows,
         incidentActive: activeIncident.rows[0]?.active === true,
       });
+      return;
     } catch (error) {
       req.log?.error({ error }, "Unable to summarize PTT telemetry");
-      return res.status(500).json({ error: "Unable to load PTT relay health" });
+      res.status(500).json({ error: "Unable to load PTT relay health" });
+      return;
     }
   });
   app.get("/api/ptt/session", requireAuth, async (req, res) => {

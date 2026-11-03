@@ -66,13 +66,16 @@ export const apiAuthenticationBoundary: RequestHandler = (req, res, next) => {
     void getStaffAccess(req)
       .then((access) => {
         if (access.approvalStatus !== "approved") {
-          return res.status(403).json({ message: "Approved staff access required" });
+          res.status(403).json({ message: "Approved staff access required" });
+          return;
         }
         if (required === "owner") {
-          return res.status(403).json({ message: "Owner approval required" });
+          res.status(403).json({ message: "Owner approval required" });
+          return;
         }
         if (required && !access.features[required]) {
-          return res.status(403).json({ message: `Approved ${required} access required` });
+          res.status(403).json({ message: `Approved ${required} access required` });
+          return;
         }
         return next();
       })

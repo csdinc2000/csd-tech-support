@@ -44,7 +44,8 @@ export function registerContactCrmRoutes(app: Express, context: ContactCrmRouteC
       const contact = await storage.getCrmContact(parseInt(req.params.id));
       const scope = await getStaffAssignmentScope(req);
       if (!contact || !canSeeContact(scope, contact.id)) {
-        return res.status(404).json({ error: "Contact not found" });
+        res.status(404).json({ error: "Contact not found" });
+        return;
       }
       res.json({ ...contact, canEdit: canEditContact(scope, contact.id) });
     } catch (error) {
@@ -55,20 +56,31 @@ export function registerContactCrmRoutes(app: Express, context: ContactCrmRouteC
   app.post("/api/crm/contacts", async (req, res): Promise<any> => {
     try {
       const phoneError = invalidContactPhone(req.body);
-      if (phoneError) return res.status(400).json({ error: phoneError });
+      if (phoneError) {
+        res.status(400).json({ error: phoneError });
+        return;
+      }
       const normalized = normalizeOptionalClientId(req.body?.clientId, Object.prototype.hasOwnProperty.call(req.body ?? {}, "clientId"));
-      if (normalized.kind === "invalid") return res.status(400).json({ error: normalized.message });
+      if (normalized.kind === "invalid") {
+        res.status(400).json({ error: normalized.message });
+        return;
+      }
       const contactData = insertCrmContactSchema.parse({ ...req.body, clientId: normalized.kind === "id" ? normalized.clientId : null });
       if (contactData.clientId != null && !(await storage.getClient(contactData.clientId))) {
-        return res.status(400).json({ error: "Client account not found" });
+        res.status(400).json({ error: "Client account not found" });
+        return;
       }
       const scope = await getStaffAssignmentScope(req);
-      if (!scope.unrestricted) return res.status(403).json({ error: "Administrator access required to create contacts" });
+      if (!scope.unrestricted) {
+        res.status(403).json({ error: "Administrator access required to create contacts" });
+        return;
+      }
       const contact = await storage.createCrmContact(contactData);
       res.status(201).json({ ...contact, canEdit: true });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid contact data", details: error.issues });
+        res.status(400).json({ error: "Invalid contact data", details: error.issues });
+        return;
       }
       res.status(500).json({ error: "Failed to create contact" });
     }
@@ -79,21 +91,40 @@ export function registerContactCrmRoutes(app: Express, context: ContactCrmRouteC
       const id = parseInt(String(req.params.id));
       const existing = await storage.getCrmContact(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !canSeeContact(scope, existing.id)) return res.status(404).json({ error: "Contact not found" });
-      if (!canEditContact(scope, existing.id)) return res.status(403).json({ error: "Contact edit assignment required" });
+      if (!existing || !canSeeContact(scope, existing.id)) {
+        res.status(404).json({ error: "Contact not found" });
+        return;
+      }
+      if (!canEditContact(scope, existing.id)) {
+        res.status(403).json({ error: "Contact edit assignment required" });
+        return;
+      }
       const phoneError = invalidContactPhone(req.body);
-      if (phoneError) return res.status(400).json({ error: phoneError });
+      if (phoneError) {
+        res.status(400).json({ error: phoneError });
+        return;
+      }
       const update = { ...req.body };
       const normalized = normalizeOptionalClientId(update.clientId, Object.prototype.hasOwnProperty.call(update, "clientId"));
-      if (normalized.kind === "invalid") return res.status(400).json({ error: normalized.message });
+      if (normalized.kind === "invalid") {
+        res.status(400).json({ error: normalized.message });
+        return;
+      }
       if (normalized.kind === "unlink") update.clientId = null;
       if (normalized.kind === "id") update.clientId = normalized.clientId;
       if (update.clientId != null && !(await storage.getClient(update.clientId))) {
-        return res.status(400).json({ error: "Client account not found" });
+        res.status(400).json({ error: "Client account not found" });
+        return;
       }
-      if (!canSeeClient(scope, update.clientId ?? existing.clientId)) return res.status(403).json({ error: "Customer assignment required" });
+      if (!canSeeClient(scope, update.clientId ?? existing.clientId)) {
+        res.status(403).json({ error: "Customer assignment required" });
+        return;
+      }
       const contact = await storage.updateCrmContact(id, update);
-      if (!contact) return res.status(404).json({ error: "Contact not found" });
+      if (!contact) {
+        res.status(404).json({ error: "Contact not found" });
+        return;
+      }
       res.json(contact);
     } catch (error) {
       res.status(500).json({ error: "Failed to update contact" });
@@ -104,14 +135,21 @@ export function registerContactCrmRoutes(app: Express, context: ContactCrmRouteC
 
   app.delete("/api/crm/contacts/:id", async (req, res): Promise<any> => {
     try {
-      if (!isAdminUser(req)) return res.status(403).json({ error: "Administrator access required" });
+      if (!isAdminUser(req)) {
+        res.status(403).json({ error: "Administrator access required" });
+        return;
+      }
       const id = parseInt(req.params.id);
       const ok = await storage.deleteCrmContact(id);
-      if (!ok) return res.status(404).json({ error: "Contact not found" });
+      if (!ok) {
+        res.status(404).json({ error: "Contact not found" });
+        return;
+      }
       res.json({ success: true });
     } catch (error) {
       if (error instanceof ContactDeletionConflictError) {
-        return res.status(409).json({ error: "Cannot delete contact: invoice or booking history requires this contact." });
+        res.status(409).json({ error: "Cannot delete contact: invoice or booking history requires this contact." });
+        return;
       }
       req.log.error({ err: error }, "Delete contact failed");
       res.status(500).json({ error: "Failed to delete contact" });
@@ -121,20 +159,38 @@ export function registerContactCrmRoutes(app: Express, context: ContactCrmRouteC
   app.post("/api/crm/contacts/find-or-create", async (req, res): Promise<any> => {
     try {
       const phoneError = invalidContactPhone(req.body);
-      if (phoneError) return res.status(400).json({ error: phoneError });
+      if (phoneError) {
+        res.status(400).json({ error: phoneError });
+        return;
+      }
       const { fullName, mobilePhone, email, ...rest } = req.body;
       const normalized = normalizeOptionalClientId(rest.clientId, Object.prototype.hasOwnProperty.call(req.body ?? {}, "clientId"));
-      if (normalized.kind === "invalid") return res.status(400).json({ error: normalized.message });
+      if (normalized.kind === "invalid") {
+        res.status(400).json({ error: normalized.message });
+        return;
+      }
       rest.clientId = normalized.kind === "id" ? normalized.clientId : null;
-      if (rest.clientId != null && !(await storage.getClient(rest.clientId))) return res.status(400).json({ error: "Client account not found" });
+      if (rest.clientId != null && !(await storage.getClient(rest.clientId))) {
+        res.status(400).json({ error: "Client account not found" });
+        return;
+      }
       const scope = await getStaffAssignmentScope(req);
-      if (!canSeeClient(scope, rest.clientId)) return res.status(403).json({ error: "Customer assignment required" });
+      if (!canSeeClient(scope, rest.clientId)) {
+        res.status(403).json({ error: "Customer assignment required" });
+        return;
+      }
       let contact = await storage.getCrmContactByPhoneOrEmail(mobilePhone, email);
-      if (contact && !canSeeClient(scope, contact.clientId)) return res.status(404).json({ error: "Contact not found" });
+      if (contact && !canSeeClient(scope, contact.clientId)) {
+        res.status(404).json({ error: "Contact not found" });
+        return;
+      }
       if (!contact) contact = await storage.createCrmContact(insertCrmContactSchema.parse({ fullName, mobilePhone, email, ...rest }));
       res.json(contact);
     } catch (error) {
-      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid contact data", details: error.issues });
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid contact data", details: error.issues });
+        return;
+      }
       res.status(500).json({ error: "Failed to find or create contact" });
     }
   });
@@ -168,7 +224,10 @@ export function registerContactCrmRoutes(app: Express, context: ContactCrmRouteC
     try {
       const interaction = await storage.getCrmInteraction(parseInt(req.params.id));
       const scope = await getStaffAssignmentScope(req);
-      if (!interaction || !canSeeContact(scope, await interactionContactId(interaction))) return res.status(404).json({ error: "Interaction not found" });
+      if (!interaction || !canSeeContact(scope, await interactionContactId(interaction))) {
+        res.status(404).json({ error: "Interaction not found" });
+        return;
+      }
       res.json(interaction);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch interaction" });
@@ -180,12 +239,21 @@ export function registerContactCrmRoutes(app: Express, context: ContactCrmRouteC
       const interactionData = insertCrmInteractionSchema.parse(req.body);
       const scope = await getStaffAssignmentScope(req);
       const contactId = await interactionContactId(interactionData);
-      if (!canSeeContact(scope, contactId)) return res.status(404).json({ error: "Contact not found" });
-      if (!canEditContact(scope, contactId)) return res.status(403).json({ error: "Contact edit assignment required" });
+      if (!canSeeContact(scope, contactId)) {
+        res.status(404).json({ error: "Contact not found" });
+        return;
+      }
+      if (!canEditContact(scope, contactId)) {
+        res.status(403).json({ error: "Contact edit assignment required" });
+        return;
+      }
       const interaction = await storage.createCrmInteraction(interactionData);
       res.status(201).json(interaction);
     } catch (error) {
-      if (error instanceof z.ZodError) return res.status(400).json({ error: "Invalid interaction data", details: error.issues });
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid interaction data", details: error.issues });
+        return;
+      }
       res.status(500).json({ error: "Failed to create interaction" });
     }
   });

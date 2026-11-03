@@ -62,6 +62,7 @@ import PttAccessoryProbe from "@/pages/ptt-accessory-probe";
 import CustomerPortal from "@/pages/customer-portal";
 import PortalContract from "@/pages/portal-contract";
 import PortalHome from "@/pages/portal-home";
+import PortalReferralsPage, { PortalReferralDashboard } from "@/pages/portal-referrals";
 import DownloadAgentPage from "@/pages/download-agent";
 import LandingPage from "@/pages/landing";
 import LocalServicePage from "@/pages/local-service";
@@ -72,6 +73,7 @@ import MarketplaceListingPage from "@/pages/marketplace-listing";
 import MarketplaceSellPage from "@/pages/marketplace-sell";
 import MarketplaceManagePage from "@/pages/marketplace-manage";
 import MarketplaceAdminPage from "@/pages/marketplace-admin";
+import MarketingPage from "@/pages/marketing";
 import StaffAria from "@/components/aria/staff-aria";
 import SupportChatWidget from "@/components/aria/support-chat-widget";
 import NewLeadNotifier from "@/components/notifications/new-lead-notifier";
@@ -352,6 +354,13 @@ export function AdminRouter({ ownerAccessOverride }: { ownerAccessOverride?: Own
       <Route path="/staff-access">
         <Redirect to="/staff?tab=access" />
       </Route>
+      {/* Marketing hub — Overview / Campaigns / Tools / Playbook / All modules */}
+      <Route path="/marketing"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
+      <Route path="/marketing/campaigns"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
+      <Route path="/marketing/referrals"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
+      <Route path="/marketing/tools"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
+      <Route path="/marketing/playbook"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
+      <Route path="/marketing/channels"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
       <Route path="/marketplace">
         <RequireFeature feature="marketplace"><MarketplaceAdminPage /></RequireFeature>
       </Route>
@@ -462,6 +471,7 @@ const SUPPORT_CHAT_PATHS = [
   "/portal",
   "/portal/ticket",
   "/portal/marketplace",
+  "/portal/referrals",
   "/download",
   "/computer-repair-lauderhill",
   "/gaming-computers-lauderhill",
@@ -518,6 +528,8 @@ function Router() {
         <Route path="/portal" component={PortalHome} />
         <Route path="/portal/ticket" component={CustomerPortal} />
         <Route path="/portal/contract" component={PortalContract} />
+        <Route path="/portal/referrals" component={PortalReferralsPage} />
+        <Route path="/portal/referrals/r/:token" component={PortalReferralDashboard} />
         <Route path="/portal/marketplace" component={MarketplaceBrowse} />
         <Route path="/portal/marketplace/offers/:id" component={CatalogOffer} />
         <Route path="/portal/marketplace/sell" component={MarketplaceSellPage} />

@@ -122,6 +122,12 @@ export function requiredFeatureForApiPath(path: string, method = "GET"): StaffFe
   if (path === "/api/billing" || path.startsWith("/api/billing/")) return "owner";
   if (path === "/api/provider-health" || path.startsWith("/api/provider-health/")) return "owner";
   if (path === "/api/staff-access" || path.startsWith("/api/staff-access/")) return "staffAdmin";
+  // Referral rewards are a promise to customers, so only owners change them.
+  if (path === "/api/crm/referrals/settings" && verb !== "GET") return "owner";
+  if (
+    path === "/api/clients" || path.startsWith("/api/clients/") ||
+    path === "/api/crm" || path.startsWith("/api/crm/")
+  ) return "crm";
   if (path === "/api/invoices" || path.startsWith("/api/invoices/")) return "invoices";
   if (path === "/api/marketplace" || path.startsWith("/api/marketplace/")) return "marketplace";
   if (path === "/api/catalog" || path.startsWith("/api/catalog/")) {
@@ -182,9 +188,10 @@ export function rateLimit(opts: {
     if (rec.count > opts.max) {
       const retryAfter = Math.ceil((rec.resetAt - now) / 1000);
       res.setHeader("Retry-After", String(retryAfter));
-      return res.status(429).json({
+      res.status(429).json({
         message: opts.message || "Too many requests, please try again later.",
       });
+      return;
     }
 
     next();

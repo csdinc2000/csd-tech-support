@@ -1134,9 +1134,15 @@ export function registerInvoiceRoutes(
 ) {
   app.get("/api/public/invoices/:token", publicInvoiceLimiter, async (req, res) => {
     try {
-      if (!isValidPublicInvoiceToken(req.params.token)) return res.status(404).json({ error: "Invoice not found" });
+      if (!isValidPublicInvoiceToken(req.params.token)) {
+        res.status(404).json({ error: "Invoice not found" });
+        return;
+      }
       let row = await loadInvoiceByToken(req.params.token);
-      if (!row || row.status === "draft" || row.status === "void") return res.status(404).json({ error: "Invoice not found" });
+      if (!row || row.status === "draft" || row.status === "void") {
+        res.status(404).json({ error: "Invoice not found" });
+        return;
+      }
       row = await reconcileInvoice(row);
       const related = await loadLinesAndPayments(row.id);
       res.json(publicInvoice(row, related.lines, related.payments));
@@ -1150,10 +1156,14 @@ export function registerInvoiceRoutes(
   // Keeping this separate from GET avoids counting mail-security link scans.
   app.post("/api/public/invoices/:token/view", publicInvoiceLimiter, async (req, res) => {
     try {
-      if (!isValidPublicInvoiceToken(req.params.token)) return res.status(404).json({ error: "Invoice not found" });
+      if (!isValidPublicInvoiceToken(req.params.token)) {
+        res.status(404).json({ error: "Invoice not found" });
+        return;
+      }
       const row = await loadInvoiceByToken(req.params.token);
       if (!row || row.status === "draft" || row.status === "void") {
-        return res.status(404).json({ error: "Invoice not found" });
+        res.status(404).json({ error: "Invoice not found" });
+        return;
       }
       const viewed = await pool.query(
         `UPDATE invoices SET first_viewed_at = COALESCE(first_viewed_at, now())
@@ -1161,20 +1171,34 @@ export function registerInvoiceRoutes(
          RETURNING first_viewed_at`,
         [row.id],
       );
-      if (!viewed.rows[0]) return res.status(404).json({ error: "Invoice not found" });
-      return res.json({ firstViewedAt: viewed.rows[0].first_viewed_at });
+      if (!viewed.rows[0]) {
+        res.status(404).json({ error: "Invoice not found" });
+        return;
+      }
+      res.json({ firstViewedAt: viewed.rows[0].first_viewed_at });
+      return;
     } catch {
       // Do not include the private token in request logs or audit details.
-      return res.status(500).json({ error: "Unable to record invoice view" });
+      res.status(500).json({ error: "Unable to record invoice view" });
+      return;
     }
   });
 
   app.post("/api/public/invoices/:token/create-stripe-checkout", publicInvoiceLimiter, async (req, res) => {
     try {
-      if (!isValidPublicInvoiceToken(req.params.token)) return res.status(404).json({ error: "Invoice not found" });
+      if (!isValidPublicInvoiceToken(req.params.token)) {
+        res.status(404).json({ error: "Invoice not found" });
+        return;
+      }
       const row = await loadInvoiceByToken(req.params.token);
-      if (!row || row.status === "draft" || row.status === "void") return res.status(404).json({ error: "Invoice not found" });
-      if (row.status !== "sent" || row.external_payment_pending) return res.status(409).json({ error: "Invoice payment is being reconciled" });
+      if (!row || row.status === "draft" || row.status === "void") {
+        res.status(404).json({ error: "Invoice not found" });
+        return;
+      }
+      if (row.status !== "sent" || row.external_payment_pending) {
+        res.status(409).json({ error: "Invoice payment is being reconciled" });
+        return;
+      }
       const stripeInvoice = await ensureStripeNativeInvoice(row);
       if (!stripeInvoice.hosted_invoice_url) throw new Error("Stripe hosted invoice URL is unavailable");
       res.json({
@@ -1193,28 +1217,34 @@ export function registerInvoiceRoutes(
   app.get("/api/invoices/settings", options.authMiddleware ?? requireAuth, async (req, res) => {
     try {
       if (!await canAccessFeature(req, "invoices")) {
-        return res.status(403).json({ error: "Approved invoice access required" });
+        res.status(403).json({ error: "Approved invoice access required" });
+        return;
       }
-      return res.json(await getInvoiceSettings());
+      res.json(await getInvoiceSettings());
+      return;
     } catch (error) {
       logger.error({ error }, "Invoice settings lookup failed");
-      return res.status(500).json({ error: "Unable to load invoice settings" });
+      res.status(500).json({ error: "Unable to load invoice settings" });
+      return;
     }
   });
 
   app.put("/api/invoices/settings", options.authMiddleware ?? requireAuth, async (req, res) => {
     if (!isOwnerIdentity(req) || req.ownerApprovalStatus !== "approved") {
-      return res.status(403).json({ error: "Active owner access required" });
+      res.status(403).json({ error: "Active owner access required" });
+      return;
     }
     try {
       const settings = validateInvoiceSettings(req.body);
-      return res.json(await saveInvoiceSettings(settings));
+      res.json(await saveInvoiceSettings(settings));
+      return;
     } catch (error: any) {
       const message = error instanceof Error ? error.message : "Invalid invoice settings";
       const isValidationError = /must be|required|not allowed|unknown fields/.test(message);
-      return res.status(isValidationError ? 400 : 500).json({
+      res.status(isValidationError ? 400 : 500).json({
         error: isValidationError ? message : "Unable to save invoice settings",
       });
+      return;
     }
   });
 
@@ -1356,7 +1386,10 @@ export function registerInvoiceRoutes(
   app.get("/api/invoices/:id", ...admin, async (req, res) => {
     try {
       let row = await loadInvoice(idParam(req.params.id));
-      if (!row) return res.status(404).json({ error: "Invoice not found" });
+      if (!row) {
+        res.status(404).json({ error: "Invoice not found" });
+        return;
+      }
       row = await reconcileInvoice(row);
       const [related, audit, emails, attempts] = await Promise.all([
         loadLinesAndPayments(row.id),
@@ -1521,7 +1554,8 @@ export function registerInvoiceRoutes(
       const existing = (await client.query("SELECT * FROM invoices WHERE id = $1 FOR UPDATE", [id])).rows[0];
       if (!existing) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Invoice not found" });
+        res.status(404).json({ error: "Invoice not found" });
+        return;
       }
       assertDraftMutable(existing.status);
       const { contact, account, job, address } = await resolveInvoiceParty(client, input);
@@ -1561,7 +1595,8 @@ export function registerInvoiceRoutes(
       const row = (await client.query("SELECT * FROM invoices WHERE id = $1 FOR UPDATE", [idParam(req.params.id)])).rows[0];
       if (!row) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Invoice not found" });
+        res.status(404).json({ error: "Invoice not found" });
+        return;
       }
       assertDraftMutable(row.status);
       await client.query("DELETE FROM invoices WHERE id = $1", [row.id]);
@@ -1586,7 +1621,10 @@ export function registerInvoiceRoutes(
       publicBaseUrl = baseUrl();
       branding = await getInvoiceSettings();
       candidate = await loadInvoice(id);
-      if (!candidate) return res.status(404).json({ error: "Invoice not found" });
+      if (!candidate) {
+        res.status(404).json({ error: "Invoice not found" });
+        return;
+      }
       if (!candidate.client_email) throw new Error("Selected CRM contact does not have an email address");
       assertInvoiceStatusTransition(candidate.status as InvoiceStatus, "sent");
       stripeInvoice = await ensureStripeNativeInvoice(candidate, branding);
@@ -1608,7 +1646,8 @@ export function registerInvoiceRoutes(
       const message = String(error.message || "Unable to create Stripe invoice")
         .replace(/https?:\/\/[^\s"'<>]+/gi, "[redacted URL]")
         .slice(0, 500);
-      return res.status(status).json({ error: message });
+      res.status(status).json({ error: message });
+      return;
     }
 
     const client = await pool.connect();
@@ -1617,7 +1656,8 @@ export function registerInvoiceRoutes(
       const row = (await client.query("SELECT * FROM invoices WHERE id = $1 FOR UPDATE", [id])).rows[0];
       if (!row) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Invoice not found" });
+        res.status(404).json({ error: "Invoice not found" });
+        return;
       }
       if (!row.client_email) throw new Error("Selected CRM contact does not have an email address");
       assertInvoiceStatusTransition(row.status as InvoiceStatus, "sent");
@@ -1664,7 +1704,10 @@ export function registerInvoiceRoutes(
     try {
       id = idParam(req.params.id);
       candidate = await loadInvoice(id);
-      if (!candidate) return res.status(404).json({ error: "Invoice not found" });
+      if (!candidate) {
+        res.status(404).json({ error: "Invoice not found" });
+        return;
+      }
       if (candidate.status !== "sent") throw new Error("Only unpaid sent invoices can be emailed");
       if (!candidate.client_email) throw new Error("Selected CRM contact does not have an email address");
       await verifyCurrentStripeInvoiceDocuments(candidate);
@@ -1676,14 +1719,15 @@ export function registerInvoiceRoutes(
           logger.error({ auditError, invoiceId: candidate?.id }, "Failed to record Stripe document incident");
         }
       }
-      return res.status(/Only unpaid|unavailable/.test(error.message) ? 409 : 400).json({ error: error.message });
+      res.status(/Only unpaid|unavailable/.test(error.message) ? 409 : 400).json({ error: error.message });
+      return;
     }
 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const row = (await client.query("SELECT * FROM invoices WHERE id=$1 FOR UPDATE", [id])).rows[0];
-      if (!row) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Invoice not found" }); }
+      if (!row) { await client.query("ROLLBACK"); res.status(404).json({ error: "Invoice not found" }); return; }
       if (row.status !== "sent") throw new Error("Only unpaid sent invoices can be emailed");
       if (!row.client_email) throw new Error("Selected CRM contact does not have an email address");
       const requestKey = typeof req.body?.requestKey === "string" && /^[A-Za-z0-9_-]{16,100}$/.test(req.body.requestKey)
@@ -1707,13 +1751,14 @@ export function registerInvoiceRoutes(
   app.post("/api/invoices/:id/reminders", ...admin, async (req, res) => {
     const days: number[] = Array.isArray(req.body?.daysAfterDue) ? [...new Set<number>(req.body.daysAfterDue.map(Number))] : [];
     if (!days.length || days.length > 12 || days.some((day) => !Number.isInteger(day) || day < 1 || day > 365)) {
-      return res.status(400).json({ error: "daysAfterDue must contain 1 to 12 unique whole days between 1 and 365" });
+      res.status(400).json({ error: "daysAfterDue must contain 1 to 12 unique whole days between 1 and 365" });
+      return;
     }
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const row = (await client.query("SELECT * FROM invoices WHERE id=$1 FOR UPDATE", [idParam(req.params.id)])).rows[0];
-      if (!row) { await client.query("ROLLBACK"); return res.status(404).json({ error: "Invoice not found" }); }
+      if (!row) { await client.query("ROLLBACK"); res.status(404).json({ error: "Invoice not found" }); return; }
       if (row.status !== "sent" || !row.due_date) throw new Error("A sent invoice with a due date is required");
       if (!row.client_email) throw new Error("Selected CRM contact does not have an email address");
       const source = (await client.query("SELECT payload FROM invoice_email_outbox WHERE invoice_id=$1 ORDER BY created_at LIMIT 1", [row.id])).rows[0];
@@ -1742,7 +1787,10 @@ export function registerInvoiceRoutes(
          WHERE id=$1 AND invoice_id=$2 AND status='failed' RETURNING *`,
         [idParam(req.params.deliveryId), idParam(req.params.id)],
       );
-      if (!result.rows[0]) return res.status(409).json({ error: "Only retryable failed deliveries can be retried" });
+      if (!result.rows[0]) {
+        res.status(409).json({ error: "Only retryable failed deliveries can be retried" });
+        return;
+      }
       void processInvoiceEmailOutbox().catch((error) => logger.error({ error }, "Manual invoice email retry failed"));
       res.status(202).json(result.rows[0]);
     } catch (error: any) {
@@ -1758,7 +1806,8 @@ export function registerInvoiceRoutes(
       const row = (await client.query("SELECT * FROM invoices WHERE id=$1 FOR UPDATE", [id])).rows[0];
       if (!row) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Invoice not found" });
+        res.status(404).json({ error: "Invoice not found" });
+        return;
       }
       assertNoPendingExternalPayment(row);
       if (row.checkout_creating) throw new Error("Checkout creation is in progress; retry void after it completes");
@@ -1768,7 +1817,8 @@ export function registerInvoiceRoutes(
         if (stripeInvoice.status === "paid") {
           await client.query("ROLLBACK");
           await reconcileInvoice(row);
-          return res.status(409).json({ error: "Invoice was paid and cannot be voided" });
+          res.status(409).json({ error: "Invoice was paid and cannot be voided" });
+          return;
         }
         if (stripeInvoice.status === "draft") {
           await stripe.invoices.del(stripeInvoice.id);
@@ -1783,7 +1833,8 @@ export function registerInvoiceRoutes(
         if (session.status === "complete" && session.payment_status === "paid") {
           await client.query("ROLLBACK");
           await reconcileInvoice(row);
-          return res.status(409).json({ error: "Invoice was paid and cannot be voided" });
+          res.status(409).json({ error: "Invoice was paid and cannot be voided" });
+          return;
         }
       }
       assertInvoiceStatusTransition(row.status as InvoiceStatus, "void");
@@ -1813,7 +1864,8 @@ export function registerInvoiceRoutes(
       const row = (await client.query("SELECT * FROM invoices WHERE id=$1 FOR UPDATE", [idParam(req.params.id)])).rows[0];
       if (!row) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Invoice not found" });
+        res.status(404).json({ error: "Invoice not found" });
+        return;
       }
       assertInvoiceStatusTransition(row.status as InvoiceStatus, "paid");
       if (row.external_payment_pending && (row.external_payment_provider !== provider || row.external_payment_reference !== reference)) {
@@ -1855,7 +1907,8 @@ export function registerInvoiceRoutes(
             await client.query("UPDATE invoices SET external_payment_pending=false, external_payment_provider=NULL, external_payment_reference=NULL WHERE id=$1", [row.id]);
             await client.query("COMMIT");
             await reconcileInvoice((await loadInvoice(row.id))!);
-            return res.status(409).json({ error: "Stripe already shows this invoice paid. CSD did not record the external payment. Review both payments before taking further action." });
+            res.status(409).json({ error: "Stripe already shows this invoice paid. CSD did not record the external payment. Review both payments before taking further action." });
+            return;
           }
           throw error;
         }
@@ -1886,8 +1939,14 @@ export function registerInvoiceRoutes(
   app.post("/api/invoices/:id/create-stripe-checkout", ...admin, async (req, res) => {
     try {
       const row = await loadInvoice(idParam(req.params.id));
-      if (!row) return res.status(404).json({ error: "Invoice not found" });
-      if (row.status !== "sent" || row.external_payment_pending) return res.status(409).json({ error: "Stripe invoice is unavailable while payment is being reconciled" });
+      if (!row) {
+        res.status(404).json({ error: "Invoice not found" });
+        return;
+      }
+      if (row.status !== "sent" || row.external_payment_pending) {
+        res.status(409).json({ error: "Stripe invoice is unavailable while payment is being reconciled" });
+        return;
+      }
       const stripeInvoice = await ensureStripeNativeInvoice(row);
       if (!stripeInvoice.hosted_invoice_url) throw new Error("Stripe hosted invoice URL is unavailable");
       res.json({
