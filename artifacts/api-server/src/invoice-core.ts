@@ -53,10 +53,11 @@ export function calculateInvoiceTotals(
   if (!Number.isSafeInteger(subtotalCents) || subtotalCents > MAX_CENTS) {
     throw new Error("Invoice subtotal is too large");
   }
-  const taxCents = Math.round((subtotalCents * taxRateBps) / 10000);
-  if (discountCents > subtotalCents + taxCents) {
-    throw new Error("discountCents cannot exceed subtotal plus tax");
+  // Discounts reduce the taxable amount: tax is charged on (subtotal - discount).
+  if (discountCents > subtotalCents) {
+    throw new Error("discountCents cannot exceed the subtotal");
   }
+  const taxCents = invoiceTaxCents(subtotalCents, discountCents, taxRateBps);
   return {
     lines: normalizedLines,
     subtotalCents,
@@ -65,6 +66,42 @@ export function calculateInvoiceTotals(
     discountCents,
     totalCents: subtotalCents + taxCents - discountCents,
   };
+}
+
+/** Sales tax on the discounted amount, rounded to the nearest cent. */
+export function invoiceTaxCents(subtotalCents: number, discountCents: number, taxRateBps: number): number {
+  return Math.round((Math.max(0, subtotalCents - discountCents) * taxRateBps) / 10000);
+}
+
+export function isoDate(value: unknown): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.valueOf()) ? null : value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+/** True when an edit to a sent invoice changes what the customer is asked to pay, or who pays it. */
+export function sentInvoiceBillingChanged(
+  existing: Record<string, any>,
+  oldLines: { description: string; quantity: number; unit_amount_cents: number }[],
+  input: { dueDate: string | null; totals: ReturnType<typeof calculateInvoiceTotals> },
+  contactId: number,
+  clientId: number | null,
+): boolean {
+  if (Number(existing.contact_id) !== Number(contactId)) return true;
+  if ((existing.client_id == null ? null : Number(existing.client_id)) !== (clientId == null ? null : Number(clientId))) return true;
+  if (isoDate(existing.due_date) !== input.dueDate) return true;
+  const t = input.totals;
+  if (
+    existing.subtotal_cents !== t.subtotalCents || existing.tax_rate_bps !== t.taxRateBps ||
+    existing.tax_cents !== t.taxCents || existing.discount_cents !== t.discountCents ||
+    existing.total_cents !== t.totalCents
+  ) return true;
+  if (oldLines.length !== t.lines.length) return true;
+  return t.lines.some((line, index) =>
+    oldLines[index].description !== line.description ||
+    Number(oldLines[index].quantity) !== line.quantity ||
+    Number(oldLines[index].unit_amount_cents) !== line.unitAmountCents,
+  );
 }
 
 export function normalizePayPalCheckoutUrl(value: unknown): string | null {

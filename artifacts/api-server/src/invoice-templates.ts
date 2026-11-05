@@ -70,8 +70,7 @@ function parseTemplate(value: unknown) {
   if (!Number.isSafeInteger(discountCents) || Number(discountCents) < 0 || Number(discountCents) > MAX_INVOICE_CENTS) throw new Error("discountCents is invalid");
   const subtotal = lineItems.reduce((sum, line) => sum + line.quantity * line.unitAmountCents, 0);
   if (!Number.isSafeInteger(subtotal) || subtotal > MAX_INVOICE_CENTS) throw new Error("Template subtotal is too large");
-  const tax = Math.round((subtotal * Number(taxRateBps)) / 10000);
-  if (Number(discountCents) > subtotal + tax) throw new Error("discountCents cannot exceed subtotal plus tax");
+  if (Number(discountCents) > subtotal) throw new Error("discountCents cannot exceed the subtotal");
   const notes = body.notes == null || body.notes === "" ? null : body.notes;
   if (notes !== null && (typeof notes !== "string" || notes.trim().length > 2000)) throw new Error("notes must be at most 2000 characters");
   return { label, lineItems, dueDays: Number(dueDays), terms, taxRateBps: Number(taxRateBps), discountCents: Number(discountCents), notes: typeof notes === "string" ? notes.trim() || null : null };

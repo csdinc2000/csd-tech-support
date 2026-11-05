@@ -110,6 +110,7 @@ export default function PublicInvoice() {
                 <p className="text-[11px] font-bold uppercase tracking-[.14em] text-[#738092]">Bill to</p>
                 <p className="mt-2 text-base font-semibold">{inv.client.name}</p>
                 {inv.jobNumber && <p className="mt-1 text-sm text-[#59697a]">Service order {inv.jobNumber}</p>}
+                {inv.serviceDate && <p className="mt-1 text-sm text-[#59697a]">Date of service {dateLabel(inv.serviceDate)}</p>}
               </div>
               <div className="grid grid-cols-2 gap-4 sm:justify-self-end sm:text-right">
                 <div>
@@ -142,15 +143,15 @@ export default function PublicInvoice() {
                 <div className="flex justify-between text-[#59697a]">
                   <span>Subtotal</span><span className="tabular-nums">{money(inv.subtotalCents)}</span>
                 </div>
-                <div className="flex justify-between text-[#59697a]">
-                  <span>Tax {inv.taxRateBps ? `(${(inv.taxRateBps / 100).toFixed(2)}%)` : ""}</span>
-                  <span className="tabular-nums">{money(inv.taxCents)}</span>
-                </div>
                 {inv.discountCents > 0 && (
                   <div className="flex justify-between text-[#59697a]">
                     <span>Discount</span><span className="tabular-nums">−{money(inv.discountCents)}</span>
                   </div>
                 )}
+                <div className="flex justify-between text-[#59697a]">
+                  <span>Tax {inv.taxRateBps ? `(${(inv.taxRateBps / 100).toFixed(2)}%)` : ""}</span>
+                  <span className="tabular-nums">{money(inv.taxCents)}</span>
+                </div>
                 <div className="flex items-baseline justify-between border-t border-[#dce2e8] pt-5 text-[#14253a]">
                   <span className="font-semibold">Total</span>
                   <span className="text-2xl font-bold tracking-tight tabular-nums">{money(inv.totalCents)}</span>

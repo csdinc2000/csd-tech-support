@@ -12,6 +12,8 @@ import {
   assertInvoiceStatusTransition,
   calculateInvoiceTotals,
   generatePublicInvoiceToken,
+  isoDate,
+  sentInvoiceBillingChanged,
   hasPdfSignature,
   hashPublicInvoiceToken,
   getCanonicalInvoiceAppBaseUrl,
@@ -245,12 +247,29 @@ function optionalText(value: unknown, name: string, max: number): string | null 
   return value.trim();
 }
 
-function dueDate(value: unknown): string | null {
+function calendarDate(value: unknown, name: string): string | null {
   if (value === undefined || value === null || value === "") return null;
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("dueDate must use YYYY-MM-DD");
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(`${name} must use YYYY-MM-DD`);
   const date = new Date(`${value}T00:00:00Z`);
-  if (Number.isNaN(date.valueOf()) || date.toISOString().slice(0, 10) !== value) throw new Error("dueDate is invalid");
+  if (Number.isNaN(date.valueOf()) || date.toISOString().slice(0, 10) !== value) throw new Error(`${name} is invalid`);
   return value;
+}
+
+function dueDate(value: unknown): string | null {
+  return calendarDate(value, "dueDate");
+}
+
+/** The day the work was performed. `undefined` means "not supplied" (callers may default it from the job). */
+function serviceDate(value: unknown): string | null | undefined {
+  return value === undefined ? undefined : calendarDate(value, "serviceDate");
+}
+
+/** YYYY-MM-DD for a job's completion timestamp, used to default an invoice's service date. */
+function jobServiceDate(job: { completed_date_time?: unknown } | null | undefined): string | null {
+  const value = job?.completed_date_time;
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.valueOf()) ? null : date.toISOString().slice(0, 10);
 }
 
 function invoicePayload(body: any) {
@@ -266,6 +285,7 @@ function invoicePayload(body: any) {
     recipient,
     jobId,
     dueDate: dueDate(body?.dueDate),
+    serviceDate: serviceDate(body?.serviceDate),
     notes: optionalText(body?.notes, "notes", 10000),
     paypalCheckoutUrl: normalizePayPalCheckoutUrl(body?.paypalCheckoutUrl),
     totals,
@@ -288,6 +308,7 @@ function publicInvoice(row: DbInvoice, lines: any[], payments: any[]) {
     branding: publicInvoiceBranding(row.branding_snapshot),
     jobNumber: row.job_number,
     dueDate: row.due_date,
+    serviceDate: row.service_date ?? null,
     notes: row.notes,
     lineItems: lines.map((line) => ({
       description: line.description,
@@ -406,10 +427,31 @@ async function ensureStripeCustomer(row: DbInvoice): Promise<string> {
   return customer.id;
 }
 
+/**
+ * Idempotency-key prefix for the Stripe objects of one invoice revision. Editing
+ * a sent invoice voids its Stripe invoice and bumps `stripe_revision`, so the
+ * replacement must not reuse the original keys (Stripe would replay the voided
+ * objects for 24 hours). Revision 0 keeps the historical key format.
+ */
+export function stripeNativeInvoiceKey(row: DbInvoice): string {
+  const revision = Number(row.stripe_revision ?? 0);
+  return revision > 0 ? `crm-native-invoice-${row.id}-r${revision}` : `crm-native-invoice-${row.id}`;
+}
+
+function serviceDateLabel(value: unknown): string | null {
+  if (!value) return null;
+  const iso = value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const [year, month, day] = iso.split("-");
+  return `${month}/${day}/${year}`;
+}
+
 export async function ensureStripeNativeInvoice(row: DbInvoice, branding?: InvoiceSettings) {
   const stripe = await getUncachableStripeClient();
   const customerId = await ensureStripeCustomer(row);
   const lines = (await loadLinesAndPayments(row.id)).lines;
+  const key = stripeNativeInvoiceKey(row);
+  const servedOn = serviceDateLabel(row.service_date);
   let stripeInvoice = row.stripe_invoice_id
     ? await stripe.invoices.retrieve(row.stripe_invoice_id)
     : await stripe.invoices.create(
@@ -421,9 +463,12 @@ export async function ensureStripeNativeInvoice(row: DbInvoice, branding?: Invoi
           description: `Computer Systems Depot invoice ${row.invoice_number}`,
           footer: (branding ?? await getInvoiceSettings()).footer.slice(0, 500) || undefined,
           metadata: { crmInvoiceId: String(row.id), crmInvoiceNumber: row.invoice_number },
-          custom_fields: [{ name: "CSD invoice", value: row.invoice_number }],
+          custom_fields: [
+            { name: "CSD invoice", value: row.invoice_number },
+            ...(servedOn ? [{ name: "Date of service", value: servedOn }] : []),
+          ],
         },
-        { idempotencyKey: `crm-native-invoice-${row.id}` },
+        { idempotencyKey: key },
       );
 
   await pool.query(
@@ -444,7 +489,7 @@ export async function ensureStripeNativeInvoice(row: DbInvoice, branding?: Invoi
           description: `${line.description} (${line.quantity} × $${(line.unit_amount_cents / 100).toFixed(2)})`,
           metadata: { crmInvoiceId: String(row.id), position: String(line.position) },
         },
-        { idempotencyKey: `crm-native-invoice-${row.id}-line-${line.position}` },
+        { idempotencyKey: `${key}-line-${line.position}` },
       );
     }
     if (row.tax_cents > 0) {
@@ -457,7 +502,7 @@ export async function ensureStripeNativeInvoice(row: DbInvoice, branding?: Invoi
           description: `Tax (${(row.tax_rate_bps / 100).toFixed(2)}%)`,
           metadata: { crmInvoiceId: String(row.id), adjustment: "tax" },
         },
-        { idempotencyKey: `crm-native-invoice-${row.id}-tax` },
+        { idempotencyKey: `${key}-tax` },
       );
     }
     if (row.discount_cents > 0) {
@@ -470,7 +515,7 @@ export async function ensureStripeNativeInvoice(row: DbInvoice, branding?: Invoi
           description: "Discount",
           metadata: { crmInvoiceId: String(row.id), adjustment: "discount" },
         },
-        { idempotencyKey: `crm-native-invoice-${row.id}-discount` },
+        { idempotencyKey: `${key}-discount` },
       );
     }
     stripeInvoice = await stripe.invoices.finalizeInvoice(stripeInvoice.id, { auto_advance: false });
@@ -1114,6 +1159,8 @@ export async function ensureInvoiceSchema(): Promise<void> {
     ALTER TABLE invoices ADD COLUMN IF NOT EXISTS external_payment_reference text;
     ALTER TABLE invoices ADD COLUMN IF NOT EXISTS first_viewed_at timestamptz;
     ALTER TABLE invoices ADD COLUMN IF NOT EXISTS branding_snapshot jsonb;
+    ALTER TABLE invoices ADD COLUMN IF NOT EXISTS service_date date;
+    ALTER TABLE invoices ADD COLUMN IF NOT EXISTS stripe_revision integer NOT NULL DEFAULT 0;
     CREATE TABLE IF NOT EXISTS invoice_settings (
       id integer PRIMARY KEY CHECK (id = 1),
       settings jsonb NOT NULL,
@@ -1126,6 +1173,43 @@ export async function ensureInvoiceSchema(): Promise<void> {
       FROM crm_contacts c
       WHERE i.contact_id = c.id AND i.client_id IS NULL AND c.client_id IS NOT NULL;
   `);
+}
+
+/**
+ * Cancels the Stripe invoice and Checkout Session a sent invoice currently
+ * points at, so the customer can't pay the old amount. Returns "paid" without
+ * changing anything when Stripe shows either one already paid.
+ */
+async function releaseStripePaymentLinks(row: DbInvoice): Promise<"released" | "paid"> {
+  if (!row.stripe_invoice_id && !row.stripe_checkout_session_id) return "released";
+  const stripe = await getUncachableStripeClient();
+  // Expiring a Checkout Session is harmless (a new one is made on demand), so
+  // it goes first. Voiding the Stripe invoice is irreversible and goes last.
+  if (row.stripe_checkout_session_id) {
+    const session = await stripe.checkout.sessions.retrieve(row.stripe_checkout_session_id);
+    if (session.status === "complete" && session.payment_status === "paid") return "paid";
+    if (session.status === "open") {
+      try {
+        await stripe.checkout.sessions.expire(session.id);
+      } catch (error) {
+        const latest = await stripe.checkout.sessions.retrieve(session.id);
+        if (latest.status === "complete" && latest.payment_status === "paid") return "paid";
+        if (latest.status !== "expired") throw error;
+      }
+    }
+  }
+  if (row.stripe_invoice_id) {
+    const stripeInvoice = await stripe.invoices.retrieve(row.stripe_invoice_id);
+    if (stripeInvoice.status === "paid") return "paid";
+    if (stripeInvoice.status === "draft") await stripe.invoices.del(stripeInvoice.id);
+    else if (stripeInvoice.status === "open") await stripe.invoices.voidInvoice(stripeInvoice.id);
+  }
+  return "released";
+}
+
+/** The original email payload (it holds the customer's link) with the invoice's current amount and due date. */
+function currentInvoiceEmailPayload(source: any, row: DbInvoice) {
+  return { ...source, totalCents: row.total_cents, dueDate: isoDate(row.due_date), clientName: row.client_name };
 }
 
 export function registerInvoiceRoutes(
@@ -1282,13 +1366,19 @@ export function registerInvoiceRoutes(
          ),
          ranked_jobs AS (
            SELECT *, row_number() OVER (PARTITION BY contact_id ORDER BY created_at DESC) AS rank
-           FROM crm_jobs WHERE contact_id IS NOT NULL AND status NOT IN ('completed', 'cancelled')
+           FROM crm_jobs
+           WHERE contact_id IS NOT NULL AND status <> 'cancelled'
+             -- Finished work stays billable until it is on a (non-void) invoice.
+             AND (status <> 'completed' OR NOT EXISTS (
+               SELECT 1 FROM invoices inv WHERE inv.job_id = crm_jobs.id AND inv.status <> 'void'
+             ))
          ),
          open_jobs AS (
            SELECT contact_id, count(*)::int AS open_job_count,
                   coalesce(json_agg(json_build_object(
                     'id', id, 'jobNumber', job_number, 'serviceType', service_type,
-                    'description', description, 'estimatedAmountCents', estimated_amount
+                    'description', description, 'estimatedAmountCents', estimated_amount,
+                    'status', status, 'completedDate', to_char(completed_date_time, 'YYYY-MM-DD')
                   ) ORDER BY created_at DESC) FILTER (WHERE rank <= 3), '[]'::json) AS jobs
            FROM ranked_jobs GROUP BY contact_id
          ),
@@ -1340,7 +1430,7 @@ export function registerInvoiceRoutes(
         openBalanceCents: row.open_balance_cents as number,
         openJobCount: row.open_job_count as number,
         openRequestCount: row.open_request_count as number,
-        openJobs: (row.jobs ?? []) as { id: number; jobNumber: string; serviceType: string; description: string | null; estimatedAmountCents: number | null }[],
+        openJobs: (row.jobs ?? []) as { id: number; jobNumber: string; serviceType: string; description: string | null; estimatedAmountCents: number | null; status: string; completedDate: string | null }[],
       }));
 
       // Whoever has work open comes first, then whoever we billed most
@@ -1501,14 +1591,16 @@ export function registerInvoiceRoutes(
       const inserted = await client.query(
         `INSERT INTO invoices (
             invoice_number, client_id, contact_id, job_id, client_name, client_email, client_address, job_number,
-           due_date, notes, paypal_checkout_url, subtotal_cents, tax_rate_bps, tax_cents, discount_cents, total_cents
+           due_date, notes, paypal_checkout_url, subtotal_cents, tax_rate_bps, tax_cents, discount_cents, total_cents,
+           service_date
          ) VALUES (
            'INV-' || to_char(CURRENT_DATE, 'YYYY') || '-' || lpad(nextval('invoice_number_seq')::text, 6, '0'),
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
          ) RETURNING *`,
          [account.id, contact.id, input.jobId, account.name, contact.email, address, job?.job_number ?? null,
           input.dueDate, input.notes, input.paypalCheckoutUrl, input.totals.subtotalCents, input.totals.taxRateBps,
-          input.totals.taxCents, input.totals.discountCents, input.totals.totalCents],
+          input.totals.taxCents, input.totals.discountCents, input.totals.totalCents,
+          input.serviceDate === undefined ? jobServiceDate(job) : input.serviceDate],
       );
       const invoice = inserted.rows[0];
       for (let position = 0; position < input.totals.lines.length; position++) {
@@ -1547,9 +1639,11 @@ export function registerInvoiceRoutes(
 
   app.put("/api/invoices/:id", ...admin, async (req, res) => {
     const client = await pool.connect();
+    // Set once the old Stripe invoice/checkout has been cancelled, so a failed
+    // commit can still detach the now-unusable Stripe references.
+    let releasedStripe: { id: number; stripeInvoiceId: string | null; checkoutSessionId: string | null } | null = null;
     try {
       const id = idParam(req.params.id);
-      const input = invoicePayload(req.body);
       await client.query("BEGIN");
       const existing = (await client.query("SELECT * FROM invoices WHERE id = $1 FOR UPDATE", [id])).rows[0];
       if (!existing) {
@@ -1557,16 +1651,85 @@ export function registerInvoiceRoutes(
         res.status(404).json({ error: "Invoice not found" });
         return;
       }
-      assertDraftMutable(existing.status);
+
+      // A paid invoice's amounts are settled; only record-keeping details change.
+      if (existing.status === "paid") {
+        const nextServiceDate = serviceDate(req.body?.serviceDate);
+        const nextNotes = req.body?.notes === undefined ? existing.notes : optionalText(req.body?.notes, "notes", 10000);
+        const result = await client.query(
+          "UPDATE invoices SET service_date=$2, notes=$3, updated_at=now() WHERE id=$1 RETURNING *",
+          [id, nextServiceDate === undefined ? existing.service_date : nextServiceDate, nextNotes],
+        );
+        await recordAudit(client, id, actor(req), "paid_details_updated", {
+          serviceDate: { from: isoDate(existing.service_date), to: isoDate(result.rows[0].service_date) },
+          notesChanged: (existing.notes ?? null) !== (nextNotes ?? null),
+        });
+        await client.query("COMMIT");
+        const related = await loadLinesAndPayments(id);
+        res.json({ ...ownerInvoice(result.rows[0]), lineItems: related.lines });
+        return;
+      }
+      if (existing.status !== "draft" && existing.status !== "sent") {
+        throw new Error("Void invoices cannot be edited");
+      }
+
+      const input = invoicePayload(req.body);
       const { contact, account, job, address } = await resolveInvoiceParty(client, input);
+      const nextServiceDate = input.serviceDate === undefined
+        ? (existing.service_date ?? jobServiceDate(job))
+        : input.serviceDate;
+
+      let resetStripe = false;
+      if (existing.status === "sent") {
+        if (existing.external_payment_pending) {
+          throw new Error("External payment reconciliation is pending. Resolve it before editing this invoice.");
+        }
+        if (existing.checkout_creating) {
+          throw new Error("Checkout creation is in progress; retry the edit after it completes");
+        }
+        const payments = await client.query("SELECT 1 FROM invoice_payments WHERE invoice_id=$1 LIMIT 1", [id]);
+        if (payments.rows.length) throw new Error("This invoice already has a recorded payment and cannot be edited");
+
+        const oldLines = (await client.query(
+          "SELECT description, quantity, unit_amount_cents FROM invoice_line_items WHERE invoice_id=$1 ORDER BY position",
+          [id],
+        )).rows;
+        resetStripe = sentInvoiceBillingChanged(existing, oldLines, input, contact.id, account.id);
+        if (resetStripe) {
+          const outcome = await releaseStripePaymentLinks(existing);
+          if (outcome === "paid") {
+            await client.query("ROLLBACK");
+            await reconcileInvoice(existing);
+            res.status(409).json({ error: "The customer paid this invoice while it was being edited, so it can no longer be changed" });
+            return;
+          }
+          releasedStripe = {
+            id,
+            stripeInvoiceId: existing.stripe_invoice_id ?? null,
+            checkoutSessionId: existing.stripe_checkout_session_id ?? null,
+          };
+        }
+      }
+
       const result = await client.query(
          `UPDATE invoices SET client_id=$2, contact_id=$3, job_id=$4, client_name=$5, client_email=$6, client_address=$7,
             job_number=$8, due_date=$9, notes=$10, paypal_checkout_url=$11, subtotal_cents=$12,
-            tax_rate_bps=$13, tax_cents=$14, discount_cents=$15, total_cents=$16, updated_at=now()
+            tax_rate_bps=$13, tax_cents=$14, discount_cents=$15, total_cents=$16,
+            service_date=$17,
+            stripe_customer_id = CASE WHEN client_id IS DISTINCT FROM $2 OR contact_id IS DISTINCT FROM $3
+                                      THEN NULL ELSE stripe_customer_id END,
+            stripe_revision = stripe_revision + CASE WHEN $18 THEN 1 ELSE 0 END,
+            stripe_invoice_id = CASE WHEN $18 THEN NULL ELSE stripe_invoice_id END,
+            stripe_hosted_invoice_url = CASE WHEN $18 THEN NULL ELSE stripe_hosted_invoice_url END,
+            stripe_invoice_pdf_url = CASE WHEN $18 THEN NULL ELSE stripe_invoice_pdf_url END,
+            stripe_checkout_session_id = CASE WHEN $18 THEN NULL ELSE stripe_checkout_session_id END,
+            stripe_checkout_idempotency_key = CASE WHEN $18 THEN NULL ELSE stripe_checkout_idempotency_key END,
+            stripe_price_id = CASE WHEN $18 THEN NULL ELSE stripe_price_id END,
+            updated_at=now()
          WHERE id=$1 RETURNING *`,
          [id, account.id, contact.id, input.jobId, account.name, contact.email, address, job?.job_number ?? null,
           input.dueDate, input.notes, input.paypalCheckoutUrl, input.totals.subtotalCents, input.totals.taxRateBps,
-          input.totals.taxCents, input.totals.discountCents, input.totals.totalCents],
+          input.totals.taxCents, input.totals.discountCents, input.totals.totalCents, nextServiceDate, resetStripe],
       );
       await client.query("DELETE FROM invoice_line_items WHERE invoice_id = $1", [id]);
       for (let position = 0; position < input.totals.lines.length; position++) {
@@ -1576,12 +1739,82 @@ export function registerInvoiceRoutes(
           [id, position, line.description, line.quantity, line.unitAmountCents, line.amountCents],
         );
       }
-      await recordAudit(client, id, actor(req), "draft_updated");
+      const updated = result.rows[0];
+
+      let emailDelivery: DbInvoice | null = null;
+      if (existing.status === "sent") {
+        // Queued reminders must quote the new amount and go to the current recipient.
+        if (updated.client_email) {
+          await client.query(
+            `UPDATE invoice_email_outbox
+                SET payload = payload || jsonb_build_object('totalCents', $2::int, 'dueDate', $3::text, 'clientName', $4::text),
+                    recipient_email = $5, updated_at = now()
+              WHERE invoice_id = $1 AND status IN ('pending','failed')`,
+            [id, updated.total_cents, isoDate(updated.due_date), updated.client_name, updated.client_email],
+          );
+        } else {
+          await client.query(
+            "UPDATE invoice_email_outbox SET status='cancelled', last_error='Invoice recipient has no email address', updated_at=now() WHERE invoice_id=$1 AND status IN ('pending','failed')",
+            [id],
+          );
+        }
+        await recordAudit(client, id, actor(req), "sent_invoice_revised", {
+          totalCents: { from: existing.total_cents, to: updated.total_cents },
+          taxRateBps: { from: existing.tax_rate_bps, to: updated.tax_rate_bps },
+          discountCents: { from: existing.discount_cents, to: updated.discount_cents },
+          serviceDate: { from: isoDate(existing.service_date), to: isoDate(updated.service_date) },
+          stripeReplaced: resetStripe,
+        });
+        if (req.body?.notifyCustomer === true) {
+          if (!updated.client_email) throw new Error("Selected CRM contact does not have an email address");
+          const source = (await client.query(
+            "SELECT payload FROM invoice_email_outbox WHERE invoice_id=$1 ORDER BY created_at LIMIT 1",
+            [id],
+          )).rows[0];
+          if (!source) throw new Error("Invoice email link is unavailable");
+          emailDelivery = await enqueueInvoiceEmail(client, {
+            invoiceId: id,
+            kind: "resend",
+            recipientEmail: updated.client_email,
+            payload: currentInvoiceEmailPayload(source.payload, updated),
+            idempotencyKey: `invoice:${id}:revised:${new Date(updated.updated_at).getTime()}`,
+          });
+        }
+      } else {
+        await recordAudit(client, id, actor(req), "draft_updated");
+      }
       await client.query("COMMIT");
-      res.json({ ...ownerInvoice(result.rows[0]), lineItems: input.totals.lines });
+      releasedStripe = null;
+
+      let final = updated;
+      let stripeWarning: string | null = null;
+      if (resetStripe) {
+        try {
+          await ensureStripeNativeInvoice(updated);
+          final = (await loadInvoice(id)) ?? updated;
+        } catch (error: any) {
+          stripeWarning = "Saved, but the Stripe payment page could not be rebuilt yet. Customers can still pay by card from the invoice link; use Resend to retry.";
+          logger.error({ error, invoiceId: id }, "Unable to rebuild Stripe invoice after edit");
+        }
+      }
+      if (emailDelivery) {
+        void processInvoiceEmailOutbox().catch((error) => logger.error({ error, invoiceId: id }, "Revised invoice email processing failed"));
+      }
+      res.json({ ...ownerInvoice(final), lineItems: input.totals.lines, emailDelivery, stripeWarning });
     } catch (error: any) {
-      await client.query("ROLLBACK");
-      const status = /Only draft/.test(error.message) ? 409 : 400;
+      await client.query("ROLLBACK").catch(() => undefined);
+      if (releasedStripe) {
+        // Stripe objects were already cancelled; stop pointing at them so the
+        // next send/resend builds fresh ones instead of reusing void links.
+        await pool.query(
+          `UPDATE invoices SET stripe_invoice_id=NULL, stripe_hosted_invoice_url=NULL, stripe_invoice_pdf_url=NULL,
+             stripe_checkout_session_id=NULL, stripe_checkout_idempotency_key=NULL, stripe_price_id=NULL,
+             stripe_revision=stripe_revision+1, updated_at=now()
+           WHERE id=$1 AND stripe_invoice_id IS NOT DISTINCT FROM $2 AND stripe_checkout_session_id IS NOT DISTINCT FROM $3`,
+          [releasedStripe.id, releasedStripe.stripeInvoiceId, releasedStripe.checkoutSessionId],
+        ).catch((detachError) => logger.error({ detachError, invoiceId: releasedStripe?.id }, "Unable to detach cancelled Stripe invoice"));
+      }
+      const status = /cannot be edited|can no longer|in progress|reconciliation is pending|recorded payment/.test(error.message) ? 409 : 400;
       res.status(status).json({ error: error.message || "Unable to update invoice" });
     } finally {
       client.release();
@@ -1710,6 +1943,11 @@ export function registerInvoiceRoutes(
       }
       if (candidate.status !== "sent") throw new Error("Only unpaid sent invoices can be emailed");
       if (!candidate.client_email) throw new Error("Selected CRM contact does not have an email address");
+      if (!candidate.stripe_invoice_id && !candidate.external_payment_pending) {
+        // An edit replaced the Stripe invoice but couldn't build the new one; do it now.
+        await ensureStripeNativeInvoice(candidate);
+        candidate = (await loadInvoice(id)) ?? candidate;
+      }
       await verifyCurrentStripeInvoiceDocuments(candidate);
     } catch (error: any) {
       if (error instanceof StripeDocumentVerificationError) {
@@ -1736,7 +1974,7 @@ export function registerInvoiceRoutes(
       if (!requestKey) throw new Error("A valid resend request key is required");
       const source = (await client.query("SELECT payload FROM invoice_email_outbox WHERE invoice_id=$1 ORDER BY created_at LIMIT 1", [row.id])).rows[0];
       if (!source) throw new Error("Invoice email link is unavailable");
-      const outbox = await enqueueInvoiceEmail(client, { invoiceId: row.id, kind: "resend", recipientEmail: row.client_email, payload: source.payload, idempotencyKey: `invoice:${row.id}:resend:${requestKey}` });
+      const outbox = await enqueueInvoiceEmail(client, { invoiceId: row.id, kind: "resend", recipientEmail: row.client_email, payload: currentInvoiceEmailPayload(source.payload, row), idempotencyKey: `invoice:${row.id}:resend:${requestKey}` });
       await resolveStripeDocumentFailure(client, row.id);
       await recordAudit(client, row.id, actor(req), "email_resent", { emailOutboxId: outbox.id });
       await client.query("COMMIT");
@@ -1767,7 +2005,7 @@ export function registerInvoiceRoutes(
       for (const day of days as number[]) {
         const scheduledAt = reminderScheduledAt(String(row.due_date), day);
         scheduled.push(await enqueueInvoiceEmail(client, {
-          invoiceId: row.id, kind: "reminder", recipientEmail: row.client_email, payload: source.payload,
+          invoiceId: row.id, kind: "reminder", recipientEmail: row.client_email, payload: currentInvoiceEmailPayload(source.payload, row),
           scheduledAt, idempotencyKey: `invoice:${row.id}:reminder:${day}`,
         }));
       }

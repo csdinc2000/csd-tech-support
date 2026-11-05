@@ -8,8 +8,9 @@ import CatalogLinePicker from "@/components/invoices/catalog-line-picker";
 
 type Line = { description: string; quantity: number; unitAmountCents: number };
 
+const dayOnly = (value?: string | null) => (value ? String(value).slice(0, 10) : "");
 const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n / 100);
-const base = (): InvoiceInput => ({ dueDate: "", notes: "", paypalCheckoutUrl: "", taxRateBps: 0, discountCents: 0, lineItems: [{ description: "", quantity: 1, unitAmountCents: 0 }] });
+const base = (): InvoiceInput => ({ dueDate: "", serviceDate: "", notes: "", paypalCheckoutUrl: "", taxRateBps: 0, discountCents: 0, lineItems: [{ description: "", quantity: 1, unitAmountCents: 0 }] });
 
 export default function InvoiceDetail() {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +35,7 @@ export default function InvoiceDetail() {
   const [notice, setNotice] = useState("");
   const [reference, setReference] = useState("");
   const [reminderDays, setReminderDays] = useState("1, 7, 14");
+  const [notifyCustomer, setNotifyCustomer] = useState(true);
   const initializedForId = useRef<number | null>(null);
   const newDefaultsApplied = useRef(false);
   const editedDefaults = useRef({ due: false, notes: false, tax: false });
@@ -62,7 +64,8 @@ export default function InvoiceDetail() {
       setReference(detail.data.external_payment_pending ? detail.data.external_payment_reference ?? "" : "");
       setForm({
         jobId: detail.data.job_id,
-        dueDate: detail.data.due_date || "",
+        dueDate: dayOnly(detail.data.due_date),
+        serviceDate: dayOnly(detail.data.service_date),
         notes: detail.data.notes || "",
         paypalCheckoutUrl: detail.data.paypal_checkout_url || "",
         taxRateBps: detail.data.tax_rate_bps,
@@ -106,13 +109,19 @@ export default function InvoiceDetail() {
     );
   }, [detail.data, isNew, parties.data]);
 
+  // The discount comes off before sales tax: tax = (subtotal - discount) x rate.
   const total = useMemo(() => {
     const subtotal = form.lineItems.reduce((n: number, l: any) => n + (l.quantity || 0) * (l.unitAmountCents || 0), 0);
-    const tax = Math.round(subtotal * (form.taxRateBps || 0) / 10000);
-    return { subtotal, tax, total: subtotal + tax - (form.discountCents || 0) };
+    const discount = form.discountCents || 0;
+    const tax = Math.round(Math.max(0, subtotal - discount) * (form.taxRateBps || 0) / 10000);
+    return { subtotal, tax, total: subtotal - discount + tax };
   }, [form]);
 
-  const readonly = !!detail.data && detail.data.status !== "draft";
+  const status = detail.data?.status;
+  // Drafts and unpaid sent invoices are fully editable. A paid invoice keeps its
+  // amounts; only its date of service and notes can still be corrected.
+  const readonly = status === "paid" || status === "void";
+  const detailsLocked = status === "void";
   const patch = (values: Partial<InvoiceInput>) => setForm((f) => ({ ...f, ...values }));
   const updateLine = (index: number, changes: Partial<Line>) => {
     const v = [...form.lineItems];
@@ -135,11 +144,27 @@ export default function InvoiceDetail() {
     if (!selection) return setNotice("Choose who this invoice is for.");
     if (form.lineItems.some((l) => !l.description.trim() || l.quantity < 1))
       return setNotice("Complete every line item description and quantity.");
-    if (form.discountCents > total.subtotal + total.tax)
-      return setNotice("Discount cannot exceed subtotal plus tax.");
-    const input: InvoiceInput = { ...form, recipient: recipientFor(selection) };
+    if (form.discountCents > total.subtotal)
+      return setNotice("Discount cannot exceed the subtotal.");
+    const wasSent = status === "sent";
+    if (wasSent && !window.confirm(
+      `Update invoice ${detail.data?.invoice_number}? The customer's link will show the new details` +
+      (notifyCustomer ? " and they'll be emailed the updated invoice." : ".") +
+      " If the amount changed, the old Stripe payment link is cancelled and a new one is created.",
+    )) return;
+    const input: InvoiceInput = {
+      ...form,
+      recipient: recipientFor(selection),
+      ...(wasSent ? { notifyCustomer } : {}),
+    };
     const options = {
-      onSuccess: (invoice: any) => setLocation(`/invoices/${invoice.id}`),
+      onSuccess: (invoice: any) => {
+        if (invoice?.stripeWarning) setNotice(invoice.stripeWarning);
+        else if (wasSent) setNotice(invoice?.emailDelivery ? "Invoice updated and the customer was emailed." : "Invoice updated.");
+        else if (status === "paid") setNotice("Invoice details updated.");
+        initializedForId.current = null;
+        setLocation(`/invoices/${invoice.id}`);
+      },
       onError: (e: Error) => setNotice(e.message)
     };
     if (isNew) create.mutate(input, options);
@@ -230,18 +255,25 @@ export default function InvoiceDetail() {
                 {!readonly && openJobs.length > 0 && (
                   <div className="mt-4 border-t border-[#eee7dc] pt-4">
                     <p className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                      <Wrench className="h-3.5 w-3.5 text-amber-600" /> Attach open work
+                      <Wrench className="h-3.5 w-3.5 text-amber-600" /> Attach work to bill
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {openJobs.map((job) => (
                         <button
                           key={job.id}
                           type="button"
-                          onClick={() => patch({ jobId: form.jobId === job.id ? null : job.id })}
+                          onClick={() => {
+                            const attaching = form.jobId !== job.id;
+                            patch({
+                              jobId: attaching ? job.id : null,
+                              ...(attaching && job.completedDate && !form.serviceDate ? { serviceDate: job.completedDate } : {}),
+                            });
+                          }}
                           className={`rounded-lg border px-2.5 py-1.5 text-xs transition ${form.jobId === job.id ? "border-[#b21f32] bg-[#b21f32]/5 text-[#b21f32]" : "border-[#ddd5c9] bg-white text-slate-600 hover:border-[#b21f32]/40"}`}
                         >
                           <span className="font-bold">{job.jobNumber}</span>
                           <span className="ml-1.5 opacity-80">{job.serviceType.replaceAll("_", " ")}</span>
+                          {job.status === "completed" && <span className="ml-1.5 font-semibold text-emerald-700">done{job.completedDate ? ` ${job.completedDate}` : ""}</span>}
                         </button>
                       ))}
                     </div>
@@ -333,7 +365,13 @@ export default function InvoiceDetail() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Tax rate (%)</label>
+                  <label htmlFor="invoice-service-date" className="block text-xs font-bold uppercase tracking-wide text-slate-500">Date of service</label>
+                  <input id="invoice-service-date" disabled={detailsLocked} type="date" value={form.serviceDate || ""} onChange={(e)=>patch({serviceDate:e.target.value})} className="mt-1.5 w-full rounded-md border border-[#ddd5c9] bg-[#faf8f4] px-3 py-2 text-sm focus:border-[#b21f32] focus:ring-1 focus:ring-[#b21f32] disabled:opacity-60"/>
+                  <p className="mt-1.5 text-xs text-[#59697a]">When the work was done. Shown on the customer's invoice.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Sales tax rate (%)</label>
                   <input disabled={readonly} type="number" min="0" step="0.01" value={form.taxRateBps ? (form.taxRateBps / 100).toString() : ""} onChange={(e)=>{ editedDefaults.current.tax = true; patch({taxRateBps:Math.round(Number(e.target.value)*100)}); }} className="mt-1.5 w-full rounded-md border border-[#ddd5c9] bg-[#faf8f4] px-3 py-2 text-sm focus:border-[#b21f32] focus:ring-1 focus:ring-[#b21f32] disabled:opacity-60"/>
                 </div>
 
@@ -366,7 +404,7 @@ export default function InvoiceDetail() {
 
               <div className="mt-5">
                 <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">Notes to client</label>
-                <textarea disabled={readonly} value={form.notes || ""} onChange={(e)=>{ editedDefaults.current.notes = true; patch({notes:e.target.value}); }} placeholder="Thank you for your business." className="mt-1.5 min-h-24 w-full rounded-md border border-[#ddd5c9] bg-[#faf8f4] p-3 text-sm focus:border-[#b21f32] focus:ring-1 focus:ring-[#b21f32] disabled:opacity-60"/>
+                <textarea disabled={detailsLocked} value={form.notes || ""} onChange={(e)=>{ editedDefaults.current.notes = true; patch({notes:e.target.value}); }} placeholder="Thank you for your business." className="mt-1.5 min-h-24 w-full rounded-md border border-[#ddd5c9] bg-[#faf8f4] p-3 text-sm focus:border-[#b21f32] focus:ring-1 focus:ring-[#b21f32] disabled:opacity-60"/>
               </div>
             </div>
 
@@ -401,16 +439,16 @@ export default function InvoiceDetail() {
                     <span>Subtotal</span>
                     <span className="font-mono">{usd(total.subtotal)}</span>
                   </div>
-                  {total.tax > 0 && (
-                    <div className="flex justify-between">
-                      <span>Tax ({(form.taxRateBps / 100).toFixed(2)}%)</span>
-                      <span className="font-mono">{usd(total.tax)}</span>
-                    </div>
-                  )}
                   {form.discountCents > 0 && (
                     <div className="flex justify-between text-[#b21f32]">
                       <span>Discount</span>
                       <span className="font-mono">− {usd(form.discountCents)}</span>
+                    </div>
+                  )}
+                  {total.tax > 0 && (
+                    <div className="flex justify-between">
+                      <span>Sales tax ({(form.taxRateBps / 100).toFixed(2)}%)</span>
+                      <span className="font-mono">{usd(total.tax)}</span>
                     </div>
                   )}
                 </div>
@@ -422,9 +460,18 @@ export default function InvoiceDetail() {
                   </div>
                 </div>
 
-                {!readonly && (
-                  <button disabled={create.isPending || update.isPending} onClick={save} className="mt-6 w-full rounded-md bg-[#b51f32] px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#94172a] disabled:opacity-60">
-                    {isNew ? "Save draft invoice" : "Update draft"}
+                {status === "sent" && (
+                  <label className="mt-6 flex items-start gap-2 text-xs text-[#59697a]">
+                    <input type="checkbox" checked={notifyCustomer} onChange={(e) => setNotifyCustomer(e.target.checked)} className="mt-0.5" />
+                    <span>Email the customer the updated invoice when I save</span>
+                  </label>
+                )}
+                {status === "paid" && (
+                  <p className="mt-6 text-xs text-[#59697a]">This invoice is paid, so its amounts are locked. You can still correct the date of service and notes.</p>
+                )}
+                {!detailsLocked && (
+                  <button disabled={create.isPending || update.isPending} onClick={save} className={`${status === "sent" ? "mt-3" : "mt-6"} w-full rounded-md bg-[#b51f32] px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#94172a] disabled:opacity-60`}>
+                    {isNew ? "Save draft invoice" : status === "sent" ? "Save changes" : status === "paid" ? "Save details" : "Update draft"}
                   </button>
                 )}
 

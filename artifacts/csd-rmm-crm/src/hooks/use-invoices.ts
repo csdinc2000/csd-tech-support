@@ -6,7 +6,7 @@ export type InvoiceLineItem = { id?: number; description: string; quantity: numb
 export type Invoice = {
   id: number; invoice_number: string; status: InvoiceStatus; contact_id: number; client_id?: number | null; job_id?: number | null;
   client_name: string; client_email?: string | null; client_address?: string | null; job_number?: string | null;
-  due_date?: string | null; notes?: string | null; paypal_checkout_url?: string | null; subtotal_cents: number;
+  due_date?: string | null; service_date?: string | null; notes?: string | null; paypal_checkout_url?: string | null; subtotal_cents: number;
   tax_rate_bps: number; tax_cents: number; discount_cents: number; total_cents: number; publicUrl?: string;
   stripe_invoice_id?: string | null; stripe_hosted_invoice_url?: string | null; stripe_invoice_pdf_url?: string | null;
   external_payment_pending?: boolean; external_payment_provider?: "manual" | "paypal" | null; external_payment_reference?: string | null;
@@ -39,7 +39,7 @@ export type InvoiceRecipient =
   | { kind: "contact"; contactId: number }
   | { kind: "client"; clientId: number }
   | { kind: "new"; name: string; email?: string | null; phone?: string | null; company?: string | null };
-export type BillingPartyJob = { id: number; jobNumber: string; serviceType: string; description: string | null; estimatedAmountCents: number | null };
+export type BillingPartyJob = { id: number; jobNumber: string; serviceType: string; description: string | null; estimatedAmountCents: number | null; status?: string; completedDate?: string | null };
 export type BillingParty = {
   key: string; kind: "contact" | "client"; contactId: number | null; clientId: number | null;
   name: string; org: string | null; email: string | null; phone: string | null;
@@ -47,7 +47,7 @@ export type BillingParty = {
   openJobCount: number; openRequestCount: number; openJobs: BillingPartyJob[];
 };
 export type ServicePreset = { description: string; unitAmountCents: number; uses: number };
-export type InvoiceInput = { originInquiryId?: string; correctionOfInvoiceId?: number; contactId?: number; recipient?: InvoiceRecipient; jobId?: number | null; dueDate?: string | null; notes?: string | null; paypalCheckoutUrl?: string | null; taxRateBps: number; discountCents: number; lineItems: { description: string; quantity: number; unitAmountCents: number }[] };
+export type InvoiceInput = { originInquiryId?: string; correctionOfInvoiceId?: number; contactId?: number; recipient?: InvoiceRecipient; jobId?: number | null; dueDate?: string | null; serviceDate?: string | null; notifyCustomer?: boolean; notes?: string | null; paypalCheckoutUrl?: string | null; taxRateBps: number; discountCents: number; lineItems: { description: string; quantity: number; unitAmountCents: number }[] };
 export type InvoiceTemplateInput = {
   label: string;
   lineItems: { description: string; quantity: number; unitAmountCents: number }[];
@@ -59,7 +59,7 @@ export type InvoiceTemplateInput = {
 };
 export type InvoiceTemplate = InvoiceTemplateInput & { id: number; createdAt: string };
 export type InvoiceSettings = { businessName: string; accentColor: "red" | "navy"; contactEmail: string; contactPhone: string; footer: string; defaultDueDays: number; defaultTaxRateBps: number; defaultNotes: string };
-export type PublicInvoice = { invoiceNumber: string; status: InvoiceStatus; currency: string; branding?: InvoiceSettings | null; client: { name: string }; jobNumber?: string | null; dueDate?: string | null; notes?: string | null; lineItems: { description: string; quantity: number; unitAmountCents: number; amountCents: number }[]; subtotalCents: number; taxRateBps: number; taxCents: number; discountCents: number; totalCents: number; paypalCheckoutUrl?: string | null; stripeHostedInvoiceUrl?: string | null; stripeInvoicePdfUrl?: string | null; sentAt?: string; paidAt?: string; payments: { provider: string; amountCents: number; verified: boolean; paidAt: string }[] };
+export type PublicInvoice = { invoiceNumber: string; status: InvoiceStatus; currency: string; branding?: InvoiceSettings | null; client: { name: string }; jobNumber?: string | null; dueDate?: string | null; serviceDate?: string | null; notes?: string | null; lineItems: { description: string; quantity: number; unitAmountCents: number; amountCents: number }[]; subtotalCents: number; taxRateBps: number; taxCents: number; discountCents: number; totalCents: number; paypalCheckoutUrl?: string | null; stripeHostedInvoiceUrl?: string | null; stripeInvoicePdfUrl?: string | null; sentAt?: string; paidAt?: string; payments: { provider: string; amountCents: number; verified: boolean; paidAt: string }[] };
 
 const json = async <T>(method: string, url: string, body?: unknown) => (await apiRequest(method, url, body)).json() as Promise<T>;
 export const useInvoices = () => useQuery<Invoice[]>({ queryKey: ["/api/invoices"] });

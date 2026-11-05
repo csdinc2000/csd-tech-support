@@ -126,6 +126,7 @@ const redeemCodeSchema = z.object({
 import { ariaService } from "../aria-service";
 import { ensureAriaActionSchema, registerAriaConnectionRoutes, ownsAriaConversation, ariaScopeFingerprint } from "../aria-tools";
 import { registerAriaMultiCamRoutes } from "../aria-multicam";
+import { crmJobUpdateFromBody } from "../crm-job-update";
 import { v4 as uuidv4 } from "uuid";
 import { registerBookingRoutes, startSlotLockSweeper } from "../booking/booking-routes";
 import { seedBookingDefaults } from "../booking/seed";
@@ -3036,7 +3037,14 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
           return;
         }
       }
-      const job = await storage.updateCrmJob(id, req.body);
+      let update: ReturnType<typeof crmJobUpdateFromBody>;
+      try {
+        update = crmJobUpdateFromBody(req.body, existing);
+      } catch (validationError: any) {
+        res.status(400).json({ error: validationError.message });
+        return;
+      }
+      const job = await storage.updateCrmJob(id, update);
       if (!job) {
         res.status(404).json({ error: "Job not found" });
         return;

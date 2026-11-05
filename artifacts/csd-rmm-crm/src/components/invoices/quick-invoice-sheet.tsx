@@ -130,8 +130,9 @@ export default function QuickInvoiceSheet({
     () => lines.reduce((total, line) => total + (line.quantity || 0) * (line.unitAmountCents || 0), 0),
     [lines],
   );
-  const taxCents = Math.round((subtotal * taxRateBps) / 10000);
-  const total = subtotal + taxCents - discountCents;
+  // Discount comes off before sales tax.
+  const taxCents = Math.round((Math.max(0, subtotal - discountCents) * taxRateBps) / 10000);
+  const total = subtotal - discountCents + taxCents;
 
   const quickServices = useMemo(() => {
     return (presets.data ?? []).filter((preset) => preset.description.trim().length > 0).slice(0, 6);
@@ -213,7 +214,7 @@ export default function QuickInvoiceSheet({
     if (!selection) return "Choose who this invoice is for.";
     if (lines.every((line) => !line.description.trim())) return "Add at least one line of work.";
     if (lines.some((line) => line.description.trim() && (!Number.isInteger(line.quantity) || line.quantity < 1))) return "Every line needs a whole-number quantity of at least 1.";
-    if (discountCents > subtotal + taxCents) return "Discount cannot exceed the subtotal plus tax.";
+    if (discountCents > subtotal) return "Discount cannot exceed the subtotal.";
     return "";
   };
 
@@ -559,8 +560,8 @@ export default function QuickInvoiceSheet({
           </div>
           <div className="mb-3 flex justify-end gap-3 text-xs text-slate-500">
             <span>Subtotal {usd(subtotal)}</span>
-            <span>Tax {usd(taxCents)}</span>
             <span>Discount −{usd(discountCents)}</span>
+            <span>Tax {usd(taxCents)}</span>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button

@@ -47,13 +47,18 @@ import { CrmJob, CrmContact, InsertCrmJob } from "@shared/schema";
 import { Link } from "wouter";
 import { format } from "date-fns";
 
-type JobStatus = 'open' | 'in_progress' | 'waiting_parts' | 'completed' | 'cancelled';
+/** YYYY-MM-DD in the browser's time zone. */
+const localDay = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+type JobStatus = 'open' | 'in_progress' | 'waiting_parts' | 'ready_pickup' | 'completed' | 'cancelled';
 type JobPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 const statusOptions: { value: JobStatus; label: string; color: string; icon: typeof Clock }[] = [
   { value: 'open', label: 'Open', color: 'bg-blue-100 text-blue-800', icon: Clock },
   { value: 'in_progress', label: 'In Progress', color: 'bg-amber-100 text-amber-800', icon: Wrench },
   { value: 'waiting_parts', label: 'Waiting Parts', color: 'bg-purple-100 text-purple-800', icon: AlertCircle },
+  { value: 'ready_pickup', label: 'Ready for Pickup', color: 'bg-teal-100 text-teal-800', icon: CheckCircle },
   { value: 'completed', label: 'Completed', color: 'bg-green-100 text-green-800', icon: CheckCircle },
   { value: 'cancelled', label: 'Cancelled', color: 'bg-gray-100 text-gray-800', icon: AlertCircle },
 ];
@@ -113,7 +118,7 @@ export default function CrmJobs() {
   });
 
   const updateJobMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<Omit<InsertCrmJob, 'jobNumber'>> & { completedDateTime?: string } }) => {
+    mutationFn: async ({ id, data }: { id: number; data: Partial<Omit<InsertCrmJob, 'jobNumber'>> & { completedDateTime?: string | null } }) => {
       return await apiRequest("PATCH", `/api/crm/jobs/${id}`, data);
     },
     onSuccess: () => {
@@ -139,6 +144,7 @@ export default function CrmJobs() {
     description: '',
     notes: '',
     estimatedAmount: 0,
+    completedDate: '',
   });
 
   const resetForm = () => {
@@ -151,6 +157,7 @@ export default function CrmJobs() {
       description: '',
       notes: '',
       estimatedAmount: 0,
+      completedDate: '',
     });
     setIsEditing(false);
     setSelectedJob(null);
@@ -158,10 +165,14 @@ export default function CrmJobs() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const { completedDate, ...fields } = formData;
     if (isEditing && selectedJob) {
-      updateJobMutation.mutate({ id: selectedJob.id, data: formData });
+      // A bare YYYY-MM-DD; the server pins it to that calendar day.
+      const completedDateTime = completedDate
+        || (fields.status === 'completed' ? (selectedJob.completedDateTime ? undefined : localDay(new Date())) : null);
+      updateJobMutation.mutate({ id: selectedJob.id, data: { ...fields, completedDateTime } });
     } else {
-      createJobMutation.mutate(formData);
+      createJobMutation.mutate(fields);
     }
   };
 
@@ -176,6 +187,7 @@ export default function CrmJobs() {
       description: job.description || '',
       notes: job.notes || '',
       estimatedAmount: job.estimatedAmount || 0,
+      completedDate: job.completedDateTime ? localDay(new Date(job.completedDateTime)) : '',
     });
     setIsEditing(true);
     setShowJobDialog(true);
@@ -186,12 +198,11 @@ export default function CrmJobs() {
     setShowDetailDialog(true);
   };
 
+  // First time a job is marked completed, record today's (local) date as the day the work was done.
   const handleStatusChange = (jobId: number, newStatus: JobStatus) => {
-    const updates: { status: string; completedDateTime?: string } = { status: newStatus };
-    if (newStatus === 'completed') {
-      updates.completedDateTime = new Date().toISOString();
-    }
-    updateJobMutation.mutate({ id: jobId, data: updates });
+    const job = jobs.find((entry) => entry.id === jobId);
+    const stampToday = newStatus === 'completed' && !job?.completedDateTime;
+    updateJobMutation.mutate({ id: jobId, data: { status: newStatus, ...(stampToday ? { completedDateTime: localDay(new Date()) } : {}) } });
   };
 
   const getContactName = (contactId: number | null) => {
@@ -515,6 +526,25 @@ export default function CrmJobs() {
                 />
               </div>
             </div>
+
+            {isEditing && (
+              <div className="space-y-2">
+                <Label htmlFor="job-completed-date">Date work completed</Label>
+                <Input
+                  id="job-completed-date"
+                  type="date"
+                  value={formData.completedDate}
+                  max={localDay(new Date())}
+                  onChange={(e) => setFormData({ ...formData, completedDate: e.target.value })}
+                  data-testid="input-job-completed-date"
+                />
+                <p className="text-xs text-gray-500">
+                  {formData.status === 'completed' && !formData.completedDate
+                    ? "Leave blank to use today's date."
+                    : "Used as the date of service when this job is invoiced."}
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Description</Label>
