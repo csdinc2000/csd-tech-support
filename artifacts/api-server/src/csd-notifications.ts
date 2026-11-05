@@ -18,6 +18,12 @@ const FROM_NAME =
 
 const FROM_ADDRESS = { email: FROM_EMAIL, name: FROM_NAME };
 
+function appBaseUrl(): string {
+  const domains = process.env.REPLIT_DOMAINS;
+  if (domains) return `https://${domains.split(',')[0]}`;
+  return process.env.APP_BASE_URL || 'http://localhost:5000';
+}
+
 // Escape user-supplied text before embedding it in an HTML email body —
 // intake fields are public-form input, so without this an attacker could send
 // trusted-domain HTML email with injected markup to any address.
@@ -77,7 +83,7 @@ Technical Information:
 • IP Address: ${intake.ipAddress || 'Unknown'}
 ${intake.referrerUrl ? `• Referrer: ${intake.referrerUrl}` : ''}
 
-View details: ${process.env.REPLIT_DEV_DOMAIN || 'https://your-replit-app.repl.co'}/admin/intakes/${intake.id}
+View details: ${appBaseUrl()}/admin/intakes
     `.trim();
 
     const msg = {
@@ -97,54 +103,72 @@ View details: ${process.env.REPLIT_DEV_DOMAIN || 'https://your-replit-app.repl.c
   }
 }
 
+export type CustomerConfirmationDetails = {
+  /** Helpdesk ticket number, e.g. CSD-2026-0001. Also lets email replies thread into the ticket. */
+  ticketNumber?: string | null;
+  /** Link to the ticket in the customer portal (already carries the access token). */
+  portalUrl?: string | null;
+  /** The shop's phone number for urgent requests; the line is left out when unknown. */
+  businessPhone?: string | null;
+};
+
+/** Pure text of the customer confirmation email, so it can be tested without sending. */
+export function buildCustomerConfirmationEmail(intake: CsdIntakeRecord, details: CustomerConfirmationDetails = {}) {
+  const serviceTypeDisplay = intake.serviceType === 'Other'
+    ? intake.serviceTypeOther || 'Other Service'
+    : intake.serviceType;
+  const device = [intake.deviceType, intake.deviceBrandModel].filter(Boolean).join(' - ');
+  const ticketNumber = details.ticketNumber?.trim() || null;
+  const phone = details.businessPhone?.trim() || null;
+  const lines = [
+    `Hello ${intake.customerName},`,
+    '',
+    "Thank you for contacting Computer Systems Depot! We've received your service request and will contact you soon.",
+    '',
+    ...(ticketNumber ? [`Your ticket number: ${ticketNumber}`, ''] : []),
+    'Your Request Summary:',
+    `• Service Type: ${serviceTypeDisplay}`,
+    ...(device ? [`• Device: ${device}`] : []),
+    `• Contact Preference: ${intake.contactPreference}`,
+    '',
+    "What's Next:",
+    "• We'll contact you within 24 hours during business hours",
+    '• Please keep your device available for our technician',
+    ...(details.portalUrl ? [`• Check your request status any time: ${details.portalUrl}`] : []),
+    ...(phone ? [`• If it's urgent, call us at ${phone}`] : []),
+    ...(ticketNumber ? ['• You can reply to this email; please keep the ticket number in the subject'] : []),
+    '',
+    'Thank you for choosing Computer Systems Depot for your IT needs!',
+    '',
+    'Best regards,',
+    'Computer Systems Depot Team',
+  ];
+  const text = lines.join('\n');
+  return {
+    subject: ticketNumber
+      ? `Service request received - ${ticketNumber}`
+      : 'Service Request Confirmation - Computer Systems Depot',
+    text,
+    html: escapeHtml(text).replace(/\n/g, '<br>'),
+  };
+}
+
 /**
- * Send confirmation email to customer (optional)
+ * Confirmation email to the customer, sent through the shared mail transport
+ * (SendGrid or SMTP, whichever is configured).
  */
-export async function sendCustomerConfirmationEmail(intake: CsdIntakeRecord): Promise<void> {
-  if (!process.env.SENDGRID_API_KEY) {
-    console.log('SendGrid not configured - customer confirmation email not sent');
-    return;
-  }
+export async function sendCustomerConfirmationEmail(
+  intake: CsdIntakeRecord,
+  details: CustomerConfirmationDetails = {},
+): Promise<void> {
   if (!intake.emailAddress) return;
-
   try {
-    const serviceTypeDisplay = intake.serviceType === 'Other' 
-      ? intake.serviceTypeOther || 'Other Service'
-      : intake.serviceType;
-
-    const emailContent = `
-Hello ${intake.customerName},
-
-Thank you for contacting Computer Systems Depot! We've received your service request and will contact you soon.
-
-Your Request Summary:
-• Service Type: ${serviceTypeDisplay}
-• Device: ${intake.deviceType} - ${intake.deviceBrandModel}
-• Contact Preference: ${intake.contactPreference}
-
-What's Next:
-• We'll contact you within 24 hours during business hours
-• Please keep your device available for our technician
-• If urgent, call us directly at your business phone number
-
-Reference Number: CSD-${intake.id}
-
-Thank you for choosing Computer Systems Depot for your IT needs!
-
-Best regards,
-Computer Systems Depot Team
-    `.trim();
-
-    const msg = {
-      to: intake.emailAddress,
-      from: FROM_ADDRESS,
+    const email = buildCustomerConfirmationEmail(intake, details);
+    const { sendEmail } = await import('./helpdesk-email');
+    await sendEmail(intake.emailAddress, email.subject, email.text, {
+      html: email.html,
       replyTo: ADMIN_EMAIL,
-      subject: `Service Request Confirmation - Computer Systems Depot`,
-      text: emailContent,
-      html: escapeHtml(emailContent).replace(/\n/g, '<br>')
-    };
-
-    await sgMail.send(msg);
+    });
     console.log(`Customer confirmation email sent for intake #${intake.id}`);
   } catch (error) {
     console.error('Failed to send customer confirmation email:', error);

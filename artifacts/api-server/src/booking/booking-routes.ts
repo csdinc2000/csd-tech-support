@@ -416,9 +416,16 @@ export function registerBookingRoutes(app: Express) {
     }
   });
 
+  // Staff only (not on the public allowlist): the row carries the customer's
+  // phone, email and internal notes, and references are sequential.
   app.get("/api/booking/appointments/:reference", async (req: Request, res: Response) => {
     try {
       const a = await storage.getAppointmentByReference(routeParam(req.params.reference, "reference"));
+      const scope = await getStaffAssignmentScope(req);
+      if (a && !scope.unrestricted && (a.contactId == null || !scope.contactIds.has(a.contactId))) {
+        res.status(404).json({ error: "Appointment not found" });
+        return;
+      }
       if (!a) {
         res.status(404).json({ error: "Appointment not found" });
         return;

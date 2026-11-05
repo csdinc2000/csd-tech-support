@@ -517,7 +517,7 @@ export async function enqueueStaffEventNotification(
       AND (
         r.recipient_role='technician' OR EXISTS (
           SELECT 1 FROM staff_helpdesk_links hl JOIN staff_access_profiles p ON p.user_id=hl.auth_user_id
-          WHERE hl.helpdesk_user_id=r.linked_user_id AND p.role='technician' AND p.approval_status='approved'
+          WHERE hl.helpdesk_user_id=r.linked_user_id AND p.role='field_technician' AND p.approval_status='approved'
         ) OR (${includeOnDutyStaff} AND r.on_duty=TRUE)
       )
     ORDER BY r.id

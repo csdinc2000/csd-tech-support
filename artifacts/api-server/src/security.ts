@@ -141,6 +141,15 @@ export function requiredFeatureForApiPath(path: string, method = "GET"): StaffFe
   if (path === "/api/call-tracking" || path.startsWith("/api/call-tracking/")) return "communications";
   if (path === "/api/sms/inbox" || path.startsWith("/api/sms/inbox/")) return "communications";
   if (path === "/api/communications" || path.startsWith("/api/communications/")) return "communications";
+  // Call/SMS forwarding and the main-line setup decide where customer calls go;
+  // only the owner changes them (the UI already hides "Main Line Setup").
+  if (path === "/api/twilio/settings" && verb !== "GET") return "owner";
+  if (verb !== "GET" && (
+    path === "/api/twilio/a2p/register" ||
+    path === "/api/twilio/sync-webhooks" ||
+    path.startsWith("/api/twilio/voicemail-greeting") ||
+    path.startsWith("/api/twilio/call-log/")
+  )) return "owner";
   if (path === "/api/twilio" || (path.startsWith("/api/twilio/") && !isStaffVoicemailRequest)) return "communications";
   if (path === "/api/crm/deleted-contact-placeholders") return "crm";
   if (

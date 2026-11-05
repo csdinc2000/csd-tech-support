@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { storage } from './storage';
 import { ariaToolDescriptions, executeAriaTool, type AriaToolSession } from './aria-tools';
+import { isAdministratorScope } from './staff-access';
 
 export type AIModel = 'claude' | 'chatgpt' | 'gemini';
 
@@ -266,7 +267,7 @@ class AriaService {
   }
 
   async buildContext(session?: AriaToolSession): Promise<string> {
-    if (!session?.scope.unrestricted) {
+    if (!session || !isAdministratorScope(session.scope)) {
       return JSON.stringify({ access: "Assigned CRM contacts only. Use search_contacts/contact_history; no company-wide platform data or shared mailbox access." });
     }
     const context: AriaContext = {};

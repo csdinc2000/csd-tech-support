@@ -1,4 +1,5 @@
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Wrench,
@@ -105,6 +106,14 @@ function ReferralFeature() {
 }
 
 export default function PortalHome() {
+  const [, navigate] = useLocation();
+  // Ticket emails used to link to /portal?ticket=&email=&token=; the ticket
+  // page is what reads those, so forward old links there.
+  useEffect(() => {
+    const search = window.location.search;
+    const params = new URLSearchParams(search);
+    if (params.get("ticket") && params.get("token")) navigate(`/portal/ticket${search}`, { replace: true });
+  }, [navigate]);
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-5xl mx-auto p-6 space-y-8">

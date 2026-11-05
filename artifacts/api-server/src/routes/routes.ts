@@ -40,7 +40,8 @@ import { createSupportCode, redeemSupportCode } from "../support-codes";
 import { REMOTE_SUPPORT_WIDGET_HTML } from "../remote-support-widget";
 import { emergencyAlertService } from "../emergency-alerts";
 import { sendIntakeNotificationEmail, sendCustomerConfirmationEmail } from "../csd-notifications";
-import { sendEmail } from "../helpdesk-email";
+import { sendEmail, ticketPortalUrl } from "../helpdesk-email";
+import { getInvoiceSettings } from "../invoice-settings";
 import { isSmtpConfigured } from "../mail-transport";
 import {
   ensureIntakeEmailAuditSchema,
@@ -164,6 +165,8 @@ import {
   canViewVoicemails,
   getStaffAccess,
   getStaffAssignmentScope,
+  canSeeTicket,
+  isAdministratorScope,
   requireStaffAdministrator,
   type StaffAssignmentScope,
 } from "../staff-access";
@@ -553,7 +556,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const alerts = (await Promise.all((await storage.getActiveAlerts()).map(async (alert) =>
         await canSeeAlert(scope, alert) ? alert : null
       ))).filter(Boolean) as any[];
-      const tickets = (await storage.getOpenTickets()).filter((item) => canSeeClient(scope, item.clientId));
+      const tickets = (await storage.getOpenTickets()).filter((item) => canSeeTicket(scope, item));
 
       // The RMM dashboard represents endpoints connected to an actual remote
       // management provider. Old manually seeded/demo rows have no provider
@@ -627,7 +630,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         res.status(403).json({ error: "Customer assignment required" });
         return;
       }
-      if (!scope.unrestricted && (deviceData.meshNodeId || deviceData.meshId || deviceData.teamviewerId)) {
+      if (!isAdministratorScope(scope) && (deviceData.meshNodeId || deviceData.meshId || deviceData.teamviewerId)) {
         res.status(403).json({ error: "Administrator access required to bind a remote-management provider" });
         return;
       }
@@ -659,7 +662,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const changesProviderIdentity = providerFields.some((field) =>
         Object.prototype.hasOwnProperty.call(req.body ?? {}, field) && req.body[field] !== existing[field]
       );
-      if (!scope.unrestricted && changesProviderIdentity) {
+      if (!isAdministratorScope(scope) && changesProviderIdentity) {
         res.status(403).json({ error: "Administrator access required to change a remote-management provider binding" });
         return;
       }
@@ -793,7 +796,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.get("/api/tickets", async (req, res) => {
     try {
       const scope = await getStaffAssignmentScope(req);
-      const tickets = (await storage.getTickets()).filter((item) => canSeeClient(scope, item.clientId));
+      const tickets = (await storage.getTickets()).filter((item) => canSeeTicket(scope, item));
       res.json(tickets);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch tickets" });
@@ -803,7 +806,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.get("/api/tickets/open", async (req, res) => {
     try {
       const scope = await getStaffAssignmentScope(req);
-      const tickets = (await storage.getOpenTickets()).filter((item) => canSeeClient(scope, item.clientId));
+      const tickets = (await storage.getOpenTickets()).filter((item) => canSeeTicket(scope, item));
       res.json(tickets);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch open tickets" });
@@ -814,7 +817,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
     try {
       const ticket = await storage.getTicket(parseInt(req.params.id));
       const scope = await getStaffAssignmentScope(req);
-      if (!ticket || !canSeeClient(scope, ticket.clientId)) {
+      if (!ticket || !canSeeTicket(scope, ticket)) {
         res.status(404).json({ error: "Ticket not found" });
         return;
       }
@@ -863,11 +866,13 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const existing = await storage.getTicket(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!existing || !canSeeClient(scope, existing.clientId)) {
+      if (!existing || !canSeeTicket(scope, existing)) {
         res.status(404).json({ error: "Ticket not found" });
         return;
       }
-      if (req.body?.clientId !== undefined && !canSeeClient(scope, req.body.clientId)) {
+      // Moving a ticket to another account needs access to that account; an
+      // assignee resaving the ticket with its current account does not.
+      if (req.body?.clientId !== undefined && req.body.clientId !== existing.clientId && !canSeeClient(scope, req.body.clientId)) {
         res.status(403).json({ error: "Customer assignment required" });
         return;
       }
@@ -2106,7 +2111,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   app.post("/api/meshcentral/sync", async (req, res) => {
     try {
       const scope = await getStaffAssignmentScope(req);
-      if (!scope.unrestricted) {
+      if (!isAdministratorScope(scope)) {
         res.status(403).json({ error: "Administrator access required" });
         return;
       }
@@ -2224,7 +2229,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const id = parseInt(req.params.id);
       const ticket = await storage.getTicket(id);
       const scope = await getStaffAssignmentScope(req);
-      if (!ticket || !canSeeClient(scope, ticket.clientId)) {
+      if (!ticket || !canSeeTicket(scope, ticket)) {
         res.status(404).json({ error: "Ticket not found" });
         return;
       }
@@ -2243,6 +2248,11 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       const scope = await getStaffAssignmentScope(req);
       if (!client || !canSeeClient(scope, id)) {
         res.status(404).json({ error: "Client not found" });
+        return;
+      }
+      // Front desk can see every account but removing one stays with administrators.
+      if (scope.frontDesk) {
+        res.status(403).json({ error: "Administrator access required to delete accounts" });
         return;
       }
       try {
@@ -3809,7 +3819,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       // swallows its own errors.
       if (!crm.replayed) try {
         void sendIntakeNotificationEmail({
-          id: lead.id,
+          id: crm.intakeRecordId ?? lead.id,
           customerName: full_name,
           phoneNumber: mobile_phone || '',
           emailAddress: email || '',
@@ -3835,8 +3845,11 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
       // email address. Fire-and-forget; the helper swallows its own errors.
       if (!crm.replayed) try {
         if (email) {
-          void sendCustomerConfirmationEmail({
-            id: lead.id,
+          const confirmationTicket = ticket;
+          void (async () => {
+            const businessPhone = (await getInvoiceSettings().catch(() => null))?.contactPhone || null;
+            await sendCustomerConfirmationEmail({
+            id: crm.intakeRecordId ?? lead.id,
             customerName: full_name,
             phoneNumber: mobile_phone || '',
             emailAddress: email,
@@ -3853,7 +3866,14 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
             callId: null,
             callNotes: call_notes || null,
             createdAt: new Date(),
-          } as any);
+          } as any, {
+            ticketNumber: confirmationTicket?.ticketNumber ?? null,
+            portalUrl: confirmationTicket?.accessToken && confirmationTicket.requesterEmail
+              ? ticketPortalUrl(confirmationTicket)
+              : null,
+            businessPhone,
+          });
+          })().catch((e) => console.error('[intake] customer confirmation email error:', e));
         }
       } catch (e) {
         console.error('[intake] customer confirmation email dispatch error:', e);
@@ -4433,7 +4453,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
         userId: null,
         title: title || null,
         status: "active",
-        metadata: JSON.stringify({ ownerUserId: req.dbUser!.id, access: scope.unrestricted ? "administrator" : "assigned", assignmentScope: ariaScopeFingerprint(scope) }),
+        metadata: JSON.stringify({ ownerUserId: req.dbUser!.id, access: isAdministratorScope(scope) ? "administrator" : "assigned", assignmentScope: ariaScopeFingerprint(scope) }),
       });
 
       res.status(201).json(conversation);

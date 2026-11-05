@@ -25,8 +25,7 @@ export function isPublicApiRequest(method: string, path: string): boolean {
     (path === "/api/booking/categories" ||
       path === "/api/booking/services" ||
       /^\/api\/booking\/services\/[^/]+$/.test(path) ||
-      path === "/api/booking/availability" ||
-      /^\/api\/booking\/appointments\/[^/]+$/.test(path))
+      path === "/api/booking/availability")
   )
     return true;
   if (method === "POST" && (path === "/api/booking/locks" || path === "/api/booking/appointments"))

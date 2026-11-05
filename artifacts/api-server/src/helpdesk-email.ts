@@ -35,6 +35,11 @@ function appBaseUrl(): string {
   return process.env.APP_BASE_URL || "http://localhost:5000";
 }
 
+/** Customer portal link that opens this ticket directly (the ticket page reads these query parameters). */
+export function ticketPortalUrl(ticket: Pick<Ticket, "id" | "ticketNumber" | "requesterEmail" | "accessToken">): string {
+  return `${appBaseUrl()}/portal/ticket?ticket=${encodeURIComponent(ticket.ticketNumber || String(ticket.id))}&email=${encodeURIComponent(ticket.requesterEmail || "")}&token=${encodeURIComponent(ticket.accessToken || "")}`;
+}
+
 export interface TicketVariables {
   ticket: Ticket;
   department?: TicketDepartment | null;
@@ -45,7 +50,7 @@ export interface TicketVariables {
 
 export function renderTemplate(tpl: { subject: string; body: string }, vars: TicketVariables): { subject: string; body: string } {
   const { ticket, department, assigneeName, messageBody, responseTime } = vars;
-  const portalUrl = `${appBaseUrl()}/portal?ticket=${encodeURIComponent(ticket.ticketNumber || String(ticket.id))}&email=${encodeURIComponent(ticket.requesterEmail || "")}&token=${encodeURIComponent(ticket.accessToken || "")}`;
+  const portalUrl = ticketPortalUrl(ticket);
   const replacements: Record<string, string> = {
     ticket_number: ticket.ticketNumber || `#${ticket.id}`,
     subject: ticket.subject || "",

@@ -31,7 +31,6 @@ test("signed-out customers can reach public booking and intake methods, but not 
       ["GET", "/api/booking/services"],
       ["GET", "/api/booking/services/laptop-repair"],
       ["GET", "/api/booking/availability?service=laptop-repair"],
-      ["GET", "/api/booking/appointments/BOOK-123"],
       ["POST", "/api/booking/locks"],
       ["DELETE", "/api/booking/locks/lock-token"],
       ["POST", "/api/booking/appointments"],
@@ -46,6 +45,8 @@ test("signed-out customers can reach public booking and intake methods, but not 
       ["PUT", "/api/intake/123"],
       ["DELETE", "/api/intake/123"],
       ["GET", "/api/booking/appointments"],
+      // Returns customer contact details and internal notes, so staff only.
+      ["GET", "/api/booking/appointments/BOOK-123"],
       ["PATCH", "/api/booking/appointments/BOOK-123"],
       ["POST", "/api/booking/services"],
       ["GET", "/api/booking/locks/lock-token"],

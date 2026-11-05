@@ -47,7 +47,8 @@ export const ALL_STAFF_FEATURES: StaffFeature[] = [
 
 const ROLE_FEATURES: Record<StaffRole, StaffFeature[]> = {
   administrator: ALL_STAFF_FEATURES.filter((feature) => feature !== "billing"),
-  field_technician: ["dashboard", "communications", "operations", "helpdesk", "automation", "marketplace"],
+  // `crm` lets technicians load their board (jobs + customers); what they see is still assignment-scoped.
+  field_technician: ["dashboard", "crm", "communications", "operations", "helpdesk", "automation", "marketplace"],
   software_developer: ["dashboard", "operations", "helpdesk", "reports", "automation"],
   accounting: ["dashboard", "crm", "invoices", "reports"],
   it_manager: ["dashboard", "crm", "communications", "scheduling", "operations", "helpdesk", "reports", "automation", "compliance", "helpdeskAdmin", "dispatchAdmin", "marketplace"],
@@ -88,7 +89,26 @@ export type StaffAssignmentScope = {
   jobIds: Set<number>;
   contactIds: Set<number>;
   editableContactIds: Set<number>;
+  /**
+   * Front desk sees and edits every customer record (unrestricted) but is not
+   * an administrator: admin-only tools must use isAdministratorScope().
+   */
+  frontDesk?: boolean;
+  /** Helpdesk (`users.id`) identities linked to this staff member; tickets assigned to them are visible. */
+  helpdeskUserIds?: Set<number>;
 };
+
+/** A ticket is visible for its customer account, or to the staff member it is assigned to. */
+export function canSeeTicket(scope: StaffAssignmentScope, ticket: { clientId: number | null; assignedTo?: number | null }): boolean {
+  if (scope.unrestricted) return true;
+  if (ticket.clientId != null && scope.clientIds.has(ticket.clientId)) return true;
+  return ticket.assignedTo != null && !!scope.helpdeskUserIds?.has(Number(ticket.assignedTo));
+}
+
+/** Owner/staff-admin scope, as opposed to front desk's all-customers scope. */
+export function isAdministratorScope(scope: StaffAssignmentScope): boolean {
+  return scope.unrestricted && !scope.frontDesk;
+}
 function featureMap(role: StaffRole, status: ApprovalStatus, overrides: Record<string, unknown> = {}) {
   const approved = status === "approved";
   return Object.fromEntries(ALL_STAFF_FEATURES.map((feature) => [
@@ -249,14 +269,21 @@ async function assignmentScopeForUserId(userId: string, access: StaffAccess): Pr
   if (access.approvalStatus !== "approved") {
     return emptyAssignmentScope();
   }
-  const [clients, jobs, contacts] = await Promise.all([
+  // Front desk answers for every customer: look up anyone, check in walk-ins,
+  // open jobs and tickets. Their CRM access is still gated by the crm feature.
+  if (access.role === "secretary" && access.features.crm) {
+    return { unrestricted: true, staffAdministrator: false, frontDesk: true, clientIds: new Set(), jobIds: new Set(), contactIds: new Set(), editableContactIds: new Set() };
+  }
+  const [clients, jobs, contacts, helpdesk] = await Promise.all([
     pool.query("SELECT client_id FROM staff_client_assignments WHERE user_id = $1", [userId]),
     pool.query("SELECT job_id FROM staff_job_assignments WHERE user_id = $1", [userId]),
     pool.query("SELECT contact_id, can_edit FROM staff_contact_assignments WHERE user_id = $1", [userId]),
+    pool.query("SELECT helpdesk_user_id FROM staff_helpdesk_links WHERE auth_user_id = $1", [userId]),
   ]);
   return {
     unrestricted: false,
     staffAdministrator: false,
+    helpdeskUserIds: new Set(helpdesk.rows.map((row) => Number(row.helpdesk_user_id))),
     clientIds: new Set(clients.rows.map((row) => Number(row.client_id))),
     jobIds: new Set(jobs.rows.map((row) => Number(row.job_id))),
     contactIds: new Set(contacts.rows.map((row) => Number(row.contact_id))),
@@ -1021,8 +1048,13 @@ async function canAccessAssignedServiceLog(req: Request, logId: number): Promise
 }
 
 async function canAccessAssignedTicket(req: Request, ticketId: number): Promise<boolean> {
-  const result = await pool.query("SELECT client_id FROM tickets WHERE id=$1", [ticketId]);
-  return result.rows[0] ? canAccessAssignedClient(req, result.rows[0].client_id) : false;
+  const result = await pool.query("SELECT client_id, assigned_to FROM tickets WHERE id=$1", [ticketId]);
+  const row = result.rows[0];
+  if (!row) return false;
+  return canSeeTicket(await getStaffAssignmentScope(req), {
+    clientId: row.client_id == null ? null : Number(row.client_id),
+    assignedTo: row.assigned_to == null ? null : Number(row.assigned_to),
+  });
 }
 
 async function canAccessAssignedJob(req: Request, jobId: number): Promise<boolean> {

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { pool } from "./db";
 import { storage } from "./storage";
-import { getStaffAssignmentScope, getStaffAccess, type StaffAssignmentScope } from "./staff-access";
+import { getStaffAssignmentScope, getStaffAccess, isAdministratorScope, type StaffAssignmentScope } from "./staff-access";
 import { ariaMailSettings, ariaSmtp, listAriaMailFolders, readAriaMail, searchAriaMail, testAriaMail } from "./aria-mailbox";
 import { isTwilioConfigured, placeCall, sendSms, toValidE164 } from "./twilio";
 
@@ -50,15 +50,15 @@ export async function ensureAriaActionSchema() {
 }
 
 function requireAdmin(session: AriaToolSession) {
-  if (!session.scope.unrestricted || !session.canCommunicate) throw new Error("Administrator communications access is required for the shared mailbox and outbound actions");
+  if (!isAdministratorScope(session.scope) || !session.canCommunicate) throw new Error("Administrator communications access is required for the shared mailbox and outbound actions");
 }
 
 export function ownsAriaConversation(conversation: { metadata: string | null }, userId: string, scope: StaffAssignmentScope) {
   try {
     const metadata = JSON.parse(conversation.metadata || "{}");
-    if (!metadata.ownerUserId) return scope.unrestricted; // legacy history stays admin-only
+    if (!metadata.ownerUserId) return isAdministratorScope(scope); // legacy history stays admin-only
     return metadata.ownerUserId === userId
-      && (scope.unrestricted || (metadata.access === "assigned" && metadata.assignmentScope === ariaScopeFingerprint(scope)));
+      && (isAdministratorScope(scope) || (metadata.access === "assigned" && metadata.assignmentScope === ariaScopeFingerprint(scope)));
   } catch { return false; }
 }
 
@@ -230,19 +230,19 @@ export function registerAriaConnectionRoutes(app: Express) {
   app.get("/api/aria/connections", async (req, res) => {
     const actor = await session(req);
     const settings = ariaMailSettings();
-    const canUseMailbox = actor.scope.unrestricted && actor.canCommunicate;
+    const canUseMailbox = isAdministratorScope(actor.scope) && actor.canCommunicate;
     res.json({ mailbox: { configured: !!settings, host: canUseMailbox ? settings?.host ?? null : null,
       user: canUseMailbox ? settings?.user ?? null : null },
       twilio: { configured: await isTwilioConfigured() }, canUseMailbox });
   });
   app.post("/api/aria/connections/test", async (req, res) => {
     const actor = await session(req);
-    if (!actor.scope.unrestricted || !actor.canCommunicate) { res.status(403).json({ error: "Administrator communications access required" }); return; }
+    if (!isAdministratorScope(actor.scope) || !actor.canCommunicate) { res.status(403).json({ error: "Administrator communications access required" }); return; }
     res.json(await testAriaMail());
   });
   app.get("/api/aria/actions", async (req, res) => {
     const actor = await session(req);
-    if (!actor.scope.unrestricted || !actor.canCommunicate) { res.json({ actions: [] }); return; }
+    if (!isAdministratorScope(actor.scope) || !actor.canCommunicate) { res.json({ actions: [] }); return; }
     await pool.query(`UPDATE aria_outbound_actions SET status='uncertain',result='Submission was interrupted or timed out. Check provider history before creating another request; it will not be retried.'
       WHERE user_id=$1 AND conversation_id=$2 AND status='sending' AND attempted_at < now()-interval '5 minutes'`, [actor.userId, actor.conversationId]);
     const rows = await pool.query("SELECT * FROM aria_outbound_actions WHERE user_id=$1 AND conversation_id=$2 ORDER BY created_at DESC LIMIT 20", [actor.userId, actor.conversationId]);
@@ -252,7 +252,7 @@ export function registerAriaConnectionRoutes(app: Express) {
     app.post(`/api/aria/actions/:id/${operation}`, async (req, res) => {
       try {
         const actor = await session(req);
-        if (!actor.scope.unrestricted || !actor.canCommunicate) { res.status(403).json({ error: "Administrator communications access required" }); return; }
+        if (!isAdministratorScope(actor.scope) || !actor.canCommunicate) { res.status(403).json({ error: "Administrator communications access required" }); return; }
         const id = z.string().uuid().parse(req.params.id);
         const row = (await pool.query("SELECT conversation_id FROM aria_outbound_actions WHERE id=$1 AND user_id=$2", [id, actor.userId])).rows[0];
         if (!row) { res.status(404).json({ error: "Action not found" }); return; }

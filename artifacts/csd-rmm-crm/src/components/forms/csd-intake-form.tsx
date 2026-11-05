@@ -317,7 +317,7 @@ export default function CsdIntakeForm({ embedded = false, voiceIntake = true, on
                 </p>
               )}
               <p className="text-xs text-gray-400 mt-2">
-                We'll send a reminder before your appointment.
+                We'll contact you to confirm your appointment. Keep these numbers handy.
               </p>
             </>
           ) : (
