@@ -48,6 +48,10 @@ import { applyMarketplaceMigration } from "./migrations/2026-09-16-marketplace";
 import { applySharedRateLimitsMigration } from "./migrations/2026-09-16-shared-rate-limits";
 import { applyCatalogMigration } from "./migrations/2026-09-28-catalog";
 import { applyCustomerPhotosMigration } from "./migrations/2026-10-22-customer-photos";
+import { applyStaffAvatarsMigration } from "./migrations/2026-11-06-staff-avatars";
+import { registerStaffProfileRoutes } from "./staff-profile";
+import { applyStaffBusinessCardsMigration } from "./migrations/2026-11-06-staff-business-cards";
+import { registerStaffBusinessCardRoutes } from "./staff-business-card";
 import { applySlackDeliveryHealthMigration } from "./migrations/2026-09-22-slack-delivery-health";
 import { applySlackNotificationOutboxMigration } from "./migrations/2026-09-27-slack-notification-outbox";
 import { applyStaffInvitesMigration } from "./migrations/2026-09-23-staff-invites";
@@ -162,7 +166,7 @@ app.use("/api/contact-import", express.json({ limit: "8mb" }));
 // Marketplace listings carry up to 8 base64 photos (each capped at 1.5 MB server-side).
 app.use(["/api/portal/marketplace", "/api/marketplace"], express.json({ limit: "16mb" }));
 // Intake and the customer avatar carry one base64 device photo (≤1 MB server-side).
-app.use(["/api/intake", "/api/clients/:id/avatar"], express.json({ limit: "2mb" }));
+app.use(["/api/intake", "/api/clients/:id/avatar", "/api/staff-profile/me/avatar"], express.json({ limit: "2mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -353,6 +357,16 @@ async function initStripe() {
     logger.error({ error: err }, "Customer photos migration failed");
   }
   try {
+    await applyStaffAvatarsMigration();
+  } catch (err: any) {
+    logger.error({ error: err }, "Staff avatars migration failed");
+  }
+  try {
+    await applyStaffBusinessCardsMigration();
+  } catch (err: any) {
+    logger.error({ error: err }, "Staff business cards migration failed");
+  }
+  try {
     await applyCustomerLinkMigration();
   } catch (err: any) {
     logger.warn({ error: err }, "Customer link migration skipped");
@@ -422,6 +436,8 @@ async function initStripe() {
   await initStripe();
   startCatalogReconciliationWorker();
   registerStaffAccessRoutes(app);
+  registerStaffProfileRoutes(app);
+  registerStaffBusinessCardRoutes(app);
   registerStaffContactProfileRoutes(app, requireStaffAdministrator, { isOwnerEmail: isAdminEmail });
   registerStaffInviteRoutes(app);
   registerStaffAccountDeletionRoutes(app);

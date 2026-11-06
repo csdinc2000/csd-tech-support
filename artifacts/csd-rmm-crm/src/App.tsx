@@ -38,6 +38,8 @@ import CrmJobs from "@/pages/crm-jobs";
 import ServiceLogs from "@/pages/service-logs";
 import TechTools from "@/pages/tech-tools";
 import TrainingPortal from "@/pages/training";
+import MyProfilePage from "@/pages/my-profile";
+import BusinessCardPage from "@/pages/business-card";
 import CompliancePage from "@/pages/compliance";
 import AriaPage from "@/pages/aria";
 import AriaMultiCam from "@/pages/aria-multicam";
@@ -308,6 +310,7 @@ export function AdminRouter({ ownerAccessOverride }: { ownerAccessOverride?: Own
       <Route path="/service-logs"><RequireFeature feature="operations"><ServiceLogs /></RequireFeature></Route>
       <Route path="/tech-tools"><RequireFeature feature="operations"><TechTools /></RequireFeature></Route>
       <Route path="/training" component={TrainingPortal} />
+      <Route path="/profile" component={MyProfilePage} />
       <Route path="/compliance">
         <RequireFeature feature="compliance"><CompliancePage /></RequireFeature>
       </Route>
@@ -543,6 +546,7 @@ function Router() {
         <Route path="/pay/invoice/:token" component={PublicInvoice} />
         <Route path="/invoice/:token" component={PublicInvoice} />
         <Route path="/sign/contract/:token" component={PublicContract} />
+        <Route path="/card/:token" component={BusinessCardPage} />
 
         {/* Admin routes - with layout, gated behind login */}
         <Route>

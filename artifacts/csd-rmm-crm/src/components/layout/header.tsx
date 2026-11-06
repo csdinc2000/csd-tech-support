@@ -1,4 +1,4 @@
-import { Bell, User, LogIn, LogOut, Search, Settings, CreditCard, ShieldAlert, Activity, ExternalLink } from "lucide-react";
+import { Bell, User, UserCircle, LogIn, LogOut, Search, Settings, CreditCard, ShieldAlert, Activity, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useAuth, useClerk, useUser } from "@clerk/react";
 import { useAdminAccess } from "@/hooks/use-admin-access";
+import { useMyStaffProfile } from "@/hooks/use-my-staff-profile";
 import { clearUserScopedQueryCache } from "@/lib/queryClient";
 import ThemeToggle from "@/components/theme/theme-toggle";
 import csdLogo from "@assets/cropped-CSD-Logo-New_2_1765066834661.png";
@@ -47,6 +48,9 @@ export default function Header() {
   const { isLoaded, isSignedIn } = useAuth();
   const { isAdmin } = useAdminAccess();
   const { signOut } = useClerk();
+  const { data: myProfile } = useMyStaffProfile();
+  // Prefer the picture uploaded on My Profile over the sign-in provider's image.
+  const avatarUrl = myProfile?.avatar?.url ?? user?.imageUrl;
   const { data: alerts = [] } = useQuery<Alert[]>({
     queryKey: ["/api/alerts/active"],
     enabled: isLoaded && isUserLoaded && isSignedIn && Boolean(user?.id),
@@ -167,9 +171,9 @@ export default function Header() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex h-9 items-center gap-2 px-2" aria-label="Account menu">
-                  {user.imageUrl ? (
+                  {avatarUrl ? (
                     <img
-                      src={user.imageUrl}
+                      src={avatarUrl}
                       alt={user.firstName || "User"}
                       className="h-7 w-7 rounded-full object-cover ring-2 ring-white"
                     />
@@ -192,6 +196,13 @@ export default function Header() {
                     <span className="truncate text-xs font-normal text-gray-500">{user.primaryEmailAddress.emailAddress}</span>
                   )}
                 </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/profile" className="cursor-pointer" data-testid="link-my-profile">
+                    <UserCircle className="mr-2 h-4 w-4" />
+                    My Profile
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {isAdmin && (
                   <>
