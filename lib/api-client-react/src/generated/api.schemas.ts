@@ -153,6 +153,80 @@ export interface StaffMeetingResult {
   slackQueued: boolean;
 }
 
+export interface LocalBusinessDiscoveryInput {
+  /**
+     * @minimum 1
+     * @maximum 25
+     */
+  radiusMiles: number;
+}
+
+export type LocalBusinessOpportunityElementType = typeof LocalBusinessOpportunityElementType[keyof typeof LocalBusinessOpportunityElementType];
+
+
+export const LocalBusinessOpportunityElementType = {
+  node: 'node',
+  way: 'way',
+  relation: 'relation',
+} as const;
+
+export interface LocalBusinessOpportunity {
+  id: string;
+  name: string;
+  website: string;
+  category: string;
+  elementType: LocalBusinessOpportunityElementType;
+  osmUrl: string;
+}
+
+export interface LocalBusinessDiscoveryResult {
+  /** @maxItems 50 */
+  businesses: LocalBusinessOpportunity[];
+  /** @minimum 0 */
+  total: number;
+  /**
+     * @minimum 1
+     * @maximum 25
+     */
+  radiusMiles: number;
+  center: string;
+  whatCmsConfigured: boolean;
+}
+
+export interface LocalBusinessAuditInput {
+  /** @maxLength 2048 */
+  website: string;
+}
+
+export type LocalBusinessAuditResultStatus = typeof LocalBusinessAuditResultStatus[keyof typeof LocalBusinessAuditResultStatus];
+
+
+export const LocalBusinessAuditResultStatus = {
+  success: 'success',
+  not_detected: 'not_detected',
+  unavailable: 'unavailable',
+  rate_limited: 'rate_limited',
+} as const;
+
+export interface LocalBusinessAuditResult {
+  status: LocalBusinessAuditResultStatus;
+  /** @nullable */
+  cms: string | null;
+  /** @nullable */
+  language: string | null;
+  /**
+     * @maxItems 50
+     * @items.maxLength 100
+     */
+  technologies: string[];
+  isWordPressOpportunity: boolean;
+  /**
+     * @maxLength 300
+     * @nullable
+     */
+  message: string | null;
+}
+
 export type CommunicationRecipientKind = typeof CommunicationRecipientKind[keyof typeof CommunicationRecipientKind];
 
 

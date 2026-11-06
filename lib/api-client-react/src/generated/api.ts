@@ -38,6 +38,10 @@ import type {
   ListAriaActions200,
   ListAriaActionsParams,
   ListStaffAccessAccountsParams,
+  LocalBusinessAuditInput,
+  LocalBusinessAuditResult,
+  LocalBusinessDiscoveryInput,
+  LocalBusinessDiscoveryResult,
   MeetingStaffList,
   SearchCommunicationRecipientsParams,
   SendIntakeEmail200,
@@ -454,6 +458,148 @@ export const useCancelAriaAction = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCancelAriaActionMutationOptions(options));
+    }
+
+export const getDiscoverLocalBusinessOpportunitiesUrl = () => {
+
+
+
+
+  return `/api/crm/local-opportunities/discover`
+}
+
+/**
+ * @summary Find nearby OpenStreetMap businesses with public websites
+ */
+export const discoverLocalBusinessOpportunities = async (localBusinessDiscoveryInput: LocalBusinessDiscoveryInput, options?: Parameters<typeof customFetch>[1]): Promise<LocalBusinessDiscoveryResult> => {
+
+  return customFetch<LocalBusinessDiscoveryResult>(getDiscoverLocalBusinessOpportunitiesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(localBusinessDiscoveryInput)
+  }
+);}
+
+
+
+
+
+export const getDiscoverLocalBusinessOpportunitiesMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof discoverLocalBusinessOpportunities>>, TError,{data: BodyType<LocalBusinessDiscoveryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof discoverLocalBusinessOpportunities>>, TError,{data: BodyType<LocalBusinessDiscoveryInput>}, TContext> => {
+
+const mutationKey = ['discoverLocalBusinessOpportunities'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof discoverLocalBusinessOpportunities>>, {data: BodyType<LocalBusinessDiscoveryInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  discoverLocalBusinessOpportunities(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DiscoverLocalBusinessOpportunitiesMutationResult = NonNullable<Awaited<ReturnType<typeof discoverLocalBusinessOpportunities>>>
+    export type DiscoverLocalBusinessOpportunitiesMutationBody = BodyType<LocalBusinessDiscoveryInput>
+    export type DiscoverLocalBusinessOpportunitiesMutationError = ErrorType<void>
+
+    /**
+ * @summary Find nearby OpenStreetMap businesses with public websites
+ */
+export const useDiscoverLocalBusinessOpportunities = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof discoverLocalBusinessOpportunities>>, TError,{data: BodyType<LocalBusinessDiscoveryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof discoverLocalBusinessOpportunities>>,
+        TError,
+        {data: BodyType<LocalBusinessDiscoveryInput>},
+        TContext
+      > => {
+      return useMutation(getDiscoverLocalBusinessOpportunitiesMutationOptions(options));
+    }
+
+export const getAuditLocalBusinessWebsiteUrl = () => {
+
+
+
+
+  return `/api/crm/local-opportunities/audit`
+}
+
+/**
+ * @summary Check a public business website with WhatCMS
+ */
+export const auditLocalBusinessWebsite = async (localBusinessAuditInput: LocalBusinessAuditInput, options?: Parameters<typeof customFetch>[1]): Promise<LocalBusinessAuditResult> => {
+
+  return customFetch<LocalBusinessAuditResult>(getAuditLocalBusinessWebsiteUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(localBusinessAuditInput)
+  }
+);}
+
+
+
+
+
+export const getAuditLocalBusinessWebsiteMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof auditLocalBusinessWebsite>>, TError,{data: BodyType<LocalBusinessAuditInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof auditLocalBusinessWebsite>>, TError,{data: BodyType<LocalBusinessAuditInput>}, TContext> => {
+
+const mutationKey = ['auditLocalBusinessWebsite'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof auditLocalBusinessWebsite>>, {data: BodyType<LocalBusinessAuditInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  auditLocalBusinessWebsite(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuditLocalBusinessWebsiteMutationResult = NonNullable<Awaited<ReturnType<typeof auditLocalBusinessWebsite>>>
+    export type AuditLocalBusinessWebsiteMutationBody = BodyType<LocalBusinessAuditInput>
+    export type AuditLocalBusinessWebsiteMutationError = ErrorType<void>
+
+    /**
+ * @summary Check a public business website with WhatCMS
+ */
+export const useAuditLocalBusinessWebsite = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof auditLocalBusinessWebsite>>, TError,{data: BodyType<LocalBusinessAuditInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof auditLocalBusinessWebsite>>,
+        TError,
+        {data: BodyType<LocalBusinessAuditInput>},
+        TContext
+      > => {
+      return useMutation(getAuditLocalBusinessWebsiteMutationOptions(options));
     }
 
 export const getHealthCheckUrl = () => {

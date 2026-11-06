@@ -106,6 +106,70 @@ export const CancelAriaActionResponse = zod.object({
 
 
 /**
+ * @summary Find nearby OpenStreetMap businesses with public websites
+ */
+export const discoverLocalBusinessOpportunitiesBodyRadiusMilesMax = 25;
+
+
+
+export const DiscoverLocalBusinessOpportunitiesBody = zod.object({
+  "radiusMiles": zod.number().int().min(1).max(discoverLocalBusinessOpportunitiesBodyRadiusMilesMax)
+})
+
+export const discoverLocalBusinessOpportunitiesResponseBusinessesMax = 50;
+
+export const discoverLocalBusinessOpportunitiesResponseTotalMin = 0;
+
+export const discoverLocalBusinessOpportunitiesResponseRadiusMilesMax = 25;
+
+
+
+export const DiscoverLocalBusinessOpportunitiesResponse = zod.object({
+  "businesses": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "website": zod.string().url(),
+  "category": zod.string(),
+  "elementType": zod.enum(['node', 'way', 'relation']),
+  "osmUrl": zod.string().url()
+})).max(discoverLocalBusinessOpportunitiesResponseBusinessesMax),
+  "total": zod.number().int().min(discoverLocalBusinessOpportunitiesResponseTotalMin),
+  "radiusMiles": zod.number().int().min(1).max(discoverLocalBusinessOpportunitiesResponseRadiusMilesMax),
+  "center": zod.string(),
+  "whatCmsConfigured": zod.boolean()
+})
+
+
+/**
+ * @summary Check a public business website with WhatCMS
+ */
+export const auditLocalBusinessWebsiteBodyWebsiteMax = 2048;
+
+
+
+export const AuditLocalBusinessWebsiteBody = zod.object({
+  "website": zod.string().url().max(auditLocalBusinessWebsiteBodyWebsiteMax)
+})
+
+export const auditLocalBusinessWebsiteResponseTechnologiesItemMax = 100;
+
+export const auditLocalBusinessWebsiteResponseTechnologiesMax = 50;
+
+export const auditLocalBusinessWebsiteResponseMessageMax = 300;
+
+
+
+export const AuditLocalBusinessWebsiteResponse = zod.object({
+  "status": zod.enum(['success', 'not_detected', 'unavailable', 'rate_limited']),
+  "cms": zod.string().nullable(),
+  "language": zod.string().nullable(),
+  "technologies": zod.array(zod.string().max(auditLocalBusinessWebsiteResponseTechnologiesItemMax)).max(auditLocalBusinessWebsiteResponseTechnologiesMax),
+  "isWordPressOpportunity": zod.boolean(),
+  "message": zod.string().max(auditLocalBusinessWebsiteResponseMessageMax).nullable()
+})
+
+
+/**
  * Returns server health status
  * @summary Health check
  */

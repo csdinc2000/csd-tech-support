@@ -103,6 +103,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AriaActionResult"
+  /crm/local-opportunities/discover:
+    post:
+      operationId: discoverLocalBusinessOpportunities
+      summary: Find nearby OpenStreetMap businesses with public websites
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalBusinessDiscoveryInput"
+      responses:
+        "200":
+          description: Nearby businesses with public websites
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalBusinessDiscoveryResult"
+        "400":
+          description: Invalid search radius
+        "502":
+          description: The public business directory could not be reached
+  /crm/local-opportunities/audit:
+    post:
+      operationId: auditLocalBusinessWebsite
+      summary: Check a public business website with WhatCMS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalBusinessAuditInput"
+      responses:
+        "200":
+          description: Website technology results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalBusinessAuditResult"
+        "400":
+          description: Invalid public website URL
+        "429":
+          description: The WhatCMS account or local request limit was reached
+        "502":
+          description: WhatCMS could not complete the check
+        "503":
+          description: WhatCMS API key is not configured
   /healthz:
     get:
       operationId: healthCheck
@@ -657,6 +703,56 @@ components:
         staffInvited: { type: integer, minimum: 0 }
         guestInvited: { type: integer, minimum: 0 }
         slackQueued: { type: boolean }
+    LocalBusinessDiscoveryInput:
+      type: object
+      additionalProperties: false
+      required: [radiusMiles]
+      properties:
+        radiusMiles: { type: integer, minimum: 1, maximum: 25 }
+    LocalBusinessOpportunity:
+      type: object
+      additionalProperties: false
+      required: [id, name, website, category, elementType, osmUrl]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        website: { type: string, format: uri }
+        category: { type: string }
+        elementType: { type: string, enum: [node, way, relation] }
+        osmUrl: { type: string, format: uri }
+    LocalBusinessDiscoveryResult:
+      type: object
+      additionalProperties: false
+      required: [businesses, total, radiusMiles, center, whatCmsConfigured]
+      properties:
+        businesses:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/LocalBusinessOpportunity" }
+        total: { type: integer, minimum: 0 }
+        radiusMiles: { type: integer, minimum: 1, maximum: 25 }
+        center: { type: string }
+        whatCmsConfigured: { type: boolean }
+    LocalBusinessAuditInput:
+      type: object
+      additionalProperties: false
+      required: [website]
+      properties:
+        website: { type: string, format: uri, maxLength: 2048 }
+    LocalBusinessAuditResult:
+      type: object
+      additionalProperties: false
+      required: [status, cms, language, technologies, isWordPressOpportunity, message]
+      properties:
+        status: { type: string, enum: [success, not_detected, unavailable, rate_limited] }
+        cms: { type: ["string", "null"] }
+        language: { type: ["string", "null"] }
+        technologies:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 100 }
+        isWordPressOpportunity: { type: boolean }
+        message: { type: ["string", "null"], maxLength: 300 }
     CommunicationRecipient:
       type: object
       additionalProperties: false
