@@ -4,6 +4,8 @@ import {
   Loader2,
   Mic,
   MicOff,
+  PhoneCall,
+  PhoneOff,
   Radio,
   RadioTower,
   ShieldCheck,
@@ -19,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { decodeMulaw, encodeMulaw, resamplePcm } from "@shared/roip-audio";
+import { PttRingPanel } from "@/components/ptt/ptt-ring-panel";
+import { isDirectChannel, PTT_JOIN_EVENT, pttCallFromSearch, type PttJoinDetail } from "@/lib/ptt-ring";
 
 type Channel = {
   id: string;
@@ -119,7 +123,10 @@ const DEFAULT_CHANNELS: Channel[] = [
 export default function PttDispatch() {
   const [session, setSession] = useState<PttSession | null>(null);
   const [channels, setChannels] = useState<Channel[]>(DEFAULT_CHANNELS);
-  const [selectedChannel, setSelectedChannel] = useState("dispatch");
+  // A ring's Answer opens /ptt?channel=…&with=… so the console starts in that call.
+  const [initialCall] = useState(() => pttCallFromSearch(window.location.search));
+  const [selectedChannel, setSelectedChannel] = useState(initialCall?.channelId ?? "dispatch");
+  const [privateCallLabel, setPrivateCallLabel] = useState<string | undefined>(initialCall?.label);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [clientId, setClientId] = useState("");
   const [operatorName, setOperatorName] = useState("Operator");
@@ -837,7 +844,7 @@ export default function PttDispatch() {
             }
             const joinedChannelId = message.channelId || channelRef.current;
             const joinedChannel = data.channels?.find((channel) => channel.id === joinedChannelId);
-            setStatus(`Monitoring ${joinedChannel?.name || joinedChannelId}`);
+            setStatus(isDirectChannel(joinedChannelId) ? "In private call" : `Monitoring ${joinedChannel?.name || joinedChannelId}`);
             setError("");
             for (const user of message.users || []) {
               if (user.id !== clientIdRef.current) {
@@ -1100,7 +1107,8 @@ export default function PttDispatch() {
     ...(telemetry?.trend.map((point) => Math.max(point.connected, point.failed)) ?? []),
   );
 
-  const changeChannel = (channelId: string) => {
+  const changeChannel = (channelId: string, label?: string) => {
+    setPrivateCallLabel(isDirectChannel(channelId) ? label : undefined);
     if (channelId === selectedChannel) return;
     // Must run before channelRef moves: the release names the old channel.
     abortTransmit("Joining channel…");
@@ -1118,6 +1126,18 @@ export default function PttDispatch() {
     send({ type: "join", channelId });
     setStatus("Joining channel…");
   };
+
+  // Answering a ring while this console is already open switches it in place.
+  const changeChannelRef = useRef(changeChannel);
+  changeChannelRef.current = changeChannel;
+  useEffect(() => {
+    const onJoin = (event: Event) => {
+      const detail = (event as CustomEvent<PttJoinDetail>).detail;
+      if (detail?.channelId) changeChannelRef.current(detail.channelId, detail.label);
+    };
+    window.addEventListener(PTT_JOIN_EVENT, onJoin);
+    return () => window.removeEventListener(PTT_JOIN_EVENT, onJoin);
+  }, []);
 
   const retryPeerAudio = () => {
     if (retryingPeerAudio || !connected) return;
@@ -1291,6 +1311,25 @@ export default function PttDispatch() {
 
           {/* Left Column: Channels & RoIP */}
           <div className="lg:col-span-3 flex flex-col gap-6">
+            {isDirectChannel(selectedChannel) && (
+              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 shadow-sm" data-testid="ptt-private-call">
+                <p className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-emerald-400">
+                  <PhoneCall className="h-3.5 w-3.5" /> Private call
+                </p>
+                <p className="mt-1 text-sm font-semibold text-zinc-100">{privateCallLabel ? `With ${privateCallLabel}` : "Only the people on this call can hear you"}</p>
+                <p className="mt-0.5 text-xs text-zinc-400">{participants.length} connected · not heard on the talk groups</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-3 w-full border-red-500/40 bg-transparent text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                  onClick={() => changeChannel("dispatch")}
+                  data-testid="ptt-leave-private-call"
+                >
+                  <PhoneOff className="mr-1.5 h-3.5 w-3.5" /> Leave call · back to Dispatch
+                </Button>
+              </div>
+            )}
             <div className="rounded-xl border border-zinc-800 bg-zinc-900 shadow-sm flex flex-col h-[400px] lg:h-[500px]">
               <div className="bg-zinc-950/50 p-4 border-b border-zinc-800 flex items-center justify-between">
                 <h2 className="font-bold text-zinc-300 uppercase tracking-widest text-xs flex items-center gap-2">
@@ -1487,6 +1526,7 @@ export default function PttDispatch() {
 
           {/* Right Column: Participants */}
           <div className="lg:col-span-3 flex flex-col gap-6">
+            <PttRingPanel currentChannelId={selectedChannel} channels={channels} onJoinCall={changeChannel} />
             <div className="rounded-xl border border-zinc-800 bg-zinc-900 flex flex-col h-[400px] lg:h-[500px] shadow-sm">
               <div className="bg-zinc-950/50 p-4 border-b border-zinc-800 flex items-center justify-between">
                 <h2 className="font-bold text-zinc-300 uppercase tracking-widest text-xs flex items-center gap-2">

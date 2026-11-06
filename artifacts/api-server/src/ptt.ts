@@ -43,7 +43,12 @@ export const PTT_CHANNELS = [
   },
 ] as const;
 
-type ChannelId = (typeof PTT_CHANNELS)[number]["id"];
+/** Private call created by a PTT ring: `direct:<ptt_pages.group_id>`, joinable only by the people on that ring. */
+type DirectChannelId = `direct:${string}`;
+type ChannelId = (typeof PTT_CHANNELS)[number]["id"] | DirectChannelId;
+const DIRECT_CHANNEL_PATTERN = /^direct:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** How long after a ring its private call can still be joined. */
+const DIRECT_CHANNEL_TTL_HOURS = 12;
 
 export type PttUser = {
   id: string;
@@ -315,7 +320,7 @@ function storeRtcTelemetry(channelId: ChannelId, telemetry: PttRtcTelemetry) {
   void pool.query(
     `INSERT INTO ptt_rtc_telemetry (channel_id, outcome, path, failure_reason)
      VALUES ($1, $2, $3, $4)`,
-    [channelId, outcome, telemetry.path, outcome === "failed" ? telemetry.failureReason ?? "Unspecified connection failure" : null],
+    [isDirectChannelId(channelId) ? "private" : channelId, outcome, telemetry.path, outcome === "failed" ? telemetry.failureReason ?? "Unspecified connection failure" : null],
   ).catch((error) => logger.warn({ error }, "Unable to persist PTT RTC telemetry"));
 }
 
@@ -372,8 +377,33 @@ export function shouldForwardBrowserAudioToRoip(input: {
     input.transportReady;
 }
 
+/** One of the shared talk groups (Dispatch, Field, Priority). */
 export function isPttChannelId(value: unknown): value is ChannelId {
   return channelExists(value);
+}
+
+export function isDirectChannelId(value: unknown): value is DirectChannelId {
+  return typeof value === "string" && DIRECT_CHANNEL_PATTERN.test(value);
+}
+
+export function directChannelIdForGroup(groupId: string): DirectChannelId {
+  return `direct:${groupId}`;
+}
+
+function knownChannel(value: unknown): value is ChannelId {
+  return channelExists(value) || isDirectChannelId(value);
+}
+
+/** Only the caller and the people they rang may join a private call. */
+export async function canJoinDirectChannel(userId: string, channelId: DirectChannelId): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT 1 FROM ptt_pages
+     WHERE group_id = $1::uuid AND (caller_user_id = $2 OR target_user_id = $2)
+       AND created_at > NOW() - ($3 * INTERVAL '1 hour')
+     LIMIT 1`,
+    [channelId.slice("direct:".length), userId, DIRECT_CHANNEL_TTL_HOURS],
+  );
+  return result.rows.length > 0;
 }
 
 /** The talk group each connected PTT user is monitoring (undefined = connected, no channel yet). */
@@ -474,6 +504,28 @@ function leaveChannel(client: PttClient) {
     type: "user-left",
     clientId: client.id,
   });
+}
+
+function enterChannel(client: PttClient, nextChannel: ChannelId) {
+  if (client.channelId === nextChannel) {
+    sendJson(client.ws, {
+      type: "channel-state",
+      ...channelState(nextChannel),
+      gateway: nextChannel === ROIP_CHANNEL_ID ? getRoipGatewayStatus() : undefined,
+    });
+    return;
+  }
+  leaveChannel(client);
+  client.channelId = nextChannel;
+  sendJson(client.ws, {
+    type: "channel-state",
+    ...channelState(nextChannel),
+    gateway: nextChannel === ROIP_CHANNEL_ID ? getRoipGatewayStatus() : undefined,
+  });
+  broadcastChannel(nextChannel, {
+    type: "user-joined",
+    user: publicUser(client),
+  }, client.id);
 }
 
 function removeClient(client: PttClient) {
@@ -784,30 +836,26 @@ export function setupPttServer(httpServer: Server) {
       }
 
       if (message.type === "join") {
-        if (!channelExists(message.channelId)) {
+        if (!knownChannel(message.channelId)) {
           sendJson(ws, { type: "error", message: "Unknown PTT channel." });
           return;
         }
         const nextChannel = message.channelId;
-        if (client.channelId === nextChannel) {
-          sendJson(ws, {
-            type: "channel-state",
-            ...channelState(nextChannel),
-            gateway: nextChannel === ROIP_CHANNEL_ID ? getRoipGatewayStatus() : undefined,
+        if (isDirectChannelId(nextChannel) && client.channelId !== nextChannel) {
+          void canJoinDirectChannel(client.user.id, nextChannel).then((allowed) => {
+            if (client.closed || pttClients.get(client.id) !== client) return;
+            if (!allowed) {
+              sendJson(ws, { type: "error", message: "You are not part of this private call." });
+              return;
+            }
+            enterChannel(client, nextChannel);
+          }).catch((error) => {
+            logger.error({ error }, "Unable to verify PTT private call membership");
+            sendJson(ws, { type: "error", message: "Unable to join the private call." });
           });
           return;
         }
-        leaveChannel(client);
-        client.channelId = nextChannel;
-        sendJson(ws, {
-          type: "channel-state",
-          ...channelState(nextChannel),
-          gateway: nextChannel === ROIP_CHANNEL_ID ? getRoipGatewayStatus() : undefined,
-        });
-        broadcastChannel(nextChannel, {
-          type: "user-joined",
-          user: publicUser(client),
-        }, client.id);
+        enterChannel(client, nextChannel);
         return;
       }
 
@@ -854,7 +902,7 @@ export function setupPttServer(httpServer: Server) {
       }
 
       if (message.type === "signal") {
-        if (!channelExists(message.channelId) || message.channelId !== client.channelId) return;
+        if (!knownChannel(message.channelId) || message.channelId !== client.channelId) return;
         const targetId = typeof message.to === "string" ? message.to : "";
         const target = pttClients.get(targetId);
         if (

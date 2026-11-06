@@ -7,6 +7,7 @@ import { applyStaffAccessMigration } from "./migrations/2026-09-07-staff-access"
 import { applyStaffAvatarsMigration } from "./migrations/2026-11-06-staff-avatars";
 import { applyPttPagesMigration } from "./migrations/2026-11-06-ptt-pages";
 import { effectivePageStatus, registerPttPageRoutes } from "./ptt-pages";
+import { canJoinDirectChannel, isDirectChannelId } from "./ptt";
 import { requiredFeatureForApiPath } from "./security";
 import { isPublicApiRequest } from "./api-auth-boundary";
 
@@ -117,18 +118,22 @@ test("the roster lists approved staff with PTT access, never the caller, and mar
   assert.equal((await request("/api/ptt/pages/incoming", pendingId)).status, 403);
 });
 
-test("ringing one person pops up only for them; answering returns the talk group", async () => {
-  const created = await ring(deskId, { channelId: "field", targetUserIds: [techAId] });
+test("ringing one person pops up only for them and opens a private call only the two of them can join", async () => {
+  const created = await ring(deskId, { targetUserIds: [techAId] });
   assert.equal(created.status, 201);
   const group = (await created.json()) as Group;
-  assert.equal(group.channelId, "field");
+  assert.equal(group.channelId, `direct:${group.groupId}`);
+  assert.ok(isDirectChannelId(group.channelId));
+  assert.equal(await canJoinDirectChannel(deskId, group.channelId as `direct:${string}`), true);
+  assert.equal(await canJoinDirectChannel(techAId, group.channelId as `direct:${string}`), true);
+  assert.equal(await canJoinDirectChannel(techBId, group.channelId as `direct:${string}`), false);
   assert.deepEqual(group.pages.map((p) => [p.targetUserId, p.status]), [[techAId, "ringing"]]);
 
   const incomingA = (await (await request("/api/ptt/pages/incoming", techAId)).json()) as Incoming;
   const mine = incomingA.rings.find((r) => r.groupId === group.groupId);
   assert.ok(mine);
   assert.equal(mine.callerName, "Fran Desk");
-  assert.equal(mine.channelName, "Field Technicians");
+  assert.equal(mine.channelName, "Private call");
   const incomingB = (await (await request("/api/ptt/pages/incoming", techBId)).json()) as Incoming;
   assert.equal(incomingB.rings.some((r) => r.groupId === group.groupId), false);
 
@@ -138,7 +143,7 @@ test("ringing one person pops up only for them; answering returns the talk group
 
   const answered = await request(`/api/ptt/pages/${mine.id}/respond`, techAId, { method: "POST", body: JSON.stringify({ action: "answer" }) });
   assert.equal(answered.status, 200);
-  assert.deepEqual(await answered.json(), { status: "answered", channelId: "field" });
+  assert.deepEqual(await answered.json(), { status: "answered", channelId: group.channelId });
   const again = await request(`/api/ptt/pages/${mine.id}/respond`, techAId, { method: "POST", body: JSON.stringify({ action: "decline" }) });
   assert.equal(again.status, 409);
 
@@ -175,14 +180,28 @@ test("ring everyone reaches all PTT staff at once, skipping people without acces
   assert.equal(incomingA.rings.some((r) => r.groupId === group.groupId), false);
 });
 
+test("ringing several people opens one private call for just them", async () => {
+  const created = (await (await ring(deskId, { targetUserIds: [techAId, techBId] })).json()) as Group;
+  assert.equal(created.pages.length, 2);
+  assert.ok(isDirectChannelId(created.channelId));
+  for (const id of [deskId, techAId, techBId]) {
+    assert.equal(await canJoinDirectChannel(id, created.channelId as `direct:${string}`), true);
+  }
+  assert.equal(await canJoinDirectChannel(accountantId, created.channelId as `direct:${string}`), false);
+  await request(`/api/ptt/pages/groups/${created.groupId}/cancel`, deskId, { method: "POST" });
+});
+
 test("a new ring replaces the caller's earlier ring to the same person, and bad input is rejected", async () => {
-  const first = (await (await ring(deskId, { channelId: "dispatch", targetUserIds: [techBId] })).json()) as Group;
-  const second = (await (await ring(deskId, { channelId: "priority", targetUserIds: [techBId] })).json()) as Group;
+  const first = (await (await ring(deskId, { targetUserIds: [techBId] })).json()) as Group;
+  const second = (await (await ring(deskId, { targetUserIds: [techBId] })).json()) as Group;
   const incoming = (await (await request("/api/ptt/pages/incoming", techBId)).json()) as Incoming;
   const fromDesk = incoming.rings.filter((r) => r.groupId === first.groupId || r.groupId === second.groupId);
-  assert.deepEqual(fromDesk.map((r) => r.channelId), ["priority"]);
+  assert.deepEqual(fromDesk.map((r) => r.groupId), [second.groupId]);
 
   assert.equal((await ring(deskId, { channelId: "nope", everyone: true })).status, 400);
+  assert.equal((await ring(deskId, { everyone: true })).status, 400);
+  // A forged private channel id is never joinable.
+  assert.equal(await canJoinDirectChannel(deskId, "direct:00000000-0000-4000-8000-000000000000"), false);
   assert.equal((await ring(deskId, { channelId: "dispatch", targetUserIds: [accountantId, pendingId] })).status, 400);
   assert.equal((await ring(deskId, { channelId: "dispatch", targetUserIds: [] })).status, 400);
   assert.equal((await ring(accountantId, { channelId: "dispatch", everyone: true })).status, 403);
@@ -190,7 +209,7 @@ test("a new ring replaces the caller's earlier ring to the same person, and bad 
 });
 
 test("an unanswered ring is reported as missed once it expires", async () => {
-  const created = (await (await ring(deskId, { channelId: "field", targetUserIds: [techAId] })).json()) as Group;
+  const created = (await (await ring(deskId, { targetUserIds: [techAId] })).json()) as Group;
   await pool.query(`UPDATE ptt_pages SET expires_at = NOW() - INTERVAL '1 second' WHERE group_id = $1`, [created.groupId]);
   const status = (await (await request(`/api/ptt/pages/groups/${created.groupId}`, deskId)).json()) as Group;
   assert.equal(status.pages[0].status, "missed");

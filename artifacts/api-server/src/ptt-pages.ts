@@ -3,14 +3,18 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod/v4";
 import { pool } from "./db";
 import { logger } from "./lib/logger";
-import { connectedPttUserChannels, isPttChannelId, PTT_CHANNELS } from "./ptt";
+import { connectedPttUserChannels, directChannelIdForGroup, isDirectChannelId, isPttChannelId, PTT_CHANNELS } from "./ptt";
 import { isAdminEmail, rateLimit } from "./security";
 import { canAccessFeature, getStaffAccessForUserId } from "./staff-access";
 
 /**
  * PTT "ring": from the PTT console a staff member rings one colleague, several,
  * or everyone with PTT access. Each person's app shows a ringing pop-up
- * (polled from every page) and Answer drops them into the caller's talk group.
+ * (polled from every page) and Answer opens the PTT console in that call.
+ *
+ * - Ringing specific people opens a private call (`direct:<group_id>`) that only
+ *   the caller and those people can join, so one-on-one talk stays separate.
+ * - Ringing everyone brings all PTT staff onto the caller's shared talk group.
  *
  * Who can be rung = approved staff whose effective features include
  * `communications`, the same gate as the PTT console itself.
@@ -61,6 +65,7 @@ function displayName(row: { first_name?: string | null; last_name?: string | nul
 }
 
 function channelName(channelId: string): string {
+  if (isDirectChannelId(channelId)) return "Private call";
   return PTT_CHANNELS.find((channel) => channel.id === channelId)?.name ?? channelId;
 }
 
@@ -100,7 +105,8 @@ export async function listPttRoster(excludeUserId: string | null): Promise<PttRo
 }
 
 const ringSchema = z.object({
-  channelId: z.string(),
+  /** Shared talk group for "ring everyone"; ignored for private calls. */
+  channelId: z.string().optional(),
   everyone: z.boolean().optional(),
   targetUserIds: z.array(z.string().min(1).max(200)).max(MAX_TARGETS).optional(),
 });
@@ -164,11 +170,11 @@ export function registerPttPageRoutes(app: Express): void {
         const userId = await requirePttUser(req, res);
         if (!userId) return;
         const parsed = ringSchema.safeParse(req.body);
-        if (!parsed.success || !isPttChannelId(parsed.data.channelId)) {
+        if (!parsed.success || (parsed.data.everyone && !isPttChannelId(parsed.data.channelId))) {
           res.status(400).json({ error: "Choose a talk group and who to ring" });
           return;
         }
-        const { channelId, everyone, targetUserIds } = parsed.data;
+        const { everyone, targetUserIds } = parsed.data;
         const roster = await listPttRoster(userId);
         const wanted = new Set(targetUserIds ?? []);
         const targets = everyone ? roster : roster.filter((entry) => wanted.has(entry.id));
@@ -179,6 +185,7 @@ export function registerPttPageRoutes(app: Express): void {
         const caller = await pool.query(`SELECT first_name, last_name, email FROM auth_users WHERE id = $1`, [userId]);
         const callerName = displayName(caller.rows[0] ?? {});
         const groupId = randomUUID();
+        const channelId = everyone ? parsed.data.channelId! : directChannelIdForGroup(groupId);
         const client = await pool.connect();
         try {
           await client.query("BEGIN");

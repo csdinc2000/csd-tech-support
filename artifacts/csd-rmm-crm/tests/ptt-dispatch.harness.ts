@@ -10,6 +10,8 @@ import type { Page } from "@playwright/test";
 export type PttApiOptions = {
   /** Advertised server transmit ceiling, in milliseconds. */
   maxTransmitMs?: number;
+  /** Staff listed in the "Ring staff" panel (GET /api/ptt/roster). */
+  roster?: unknown[];
 };
 
 /**
@@ -212,7 +214,7 @@ export async function installPttFakes(page: Page) {
   });
 }
 
-/** Fulfils the two endpoints the page calls; everything else fails loudly. */
+/** Fulfils the endpoints the page calls; everything else fails loudly. */
 export async function routePttApi(page: Page, options: PttApiOptions = {}) {
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -250,6 +252,14 @@ export async function routePttApi(page: Page, options: PttApiOptions = {}) {
             protocol: "CSD-RoIP/1",
           },
         }),
+      });
+      return;
+    }
+    if (path === "/api/ptt/roster") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ staff: options.roster ?? [], ringSeconds: 45 }),
       });
       return;
     }

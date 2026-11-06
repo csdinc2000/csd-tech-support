@@ -80,6 +80,7 @@ import StaffAria from "@/components/aria/staff-aria";
 import SupportChatWidget from "@/components/aria/support-chat-widget";
 import NewLeadNotifier from "@/components/notifications/new-lead-notifier";
 import IncomingCallAlerts from "@/components/notifications/incoming-call-alerts";
+import PttRingAlerts from "@/components/ptt/ptt-ring-alerts";
 import NotFound from "@/pages/not-found";
 import { ShieldAlert } from "lucide-react";
 
@@ -234,6 +235,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         <Sidebar />
         <main className="min-w-0 flex-1">
           <IncomingCallAlerts />
+          <PttRingAlerts />
           <StaffAria />
           {children}
         </main>
