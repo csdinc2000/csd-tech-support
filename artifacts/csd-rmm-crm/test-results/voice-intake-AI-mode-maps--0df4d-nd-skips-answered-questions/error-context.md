@@ -1,0 +1,319 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: Computer Systems Depot - Service Request
+      - generic [ref=e7]: Tell us about your computer problem and we'll help you get back up and running quickly.
+    - generic [ref=e8]:
+      - region "Voice Intake" [ref=e10]:
+        - generic [ref=e11]:
+          - heading "Voice Intake" [level=3] [ref=e12]:
+            - img [ref=e13]
+            - text: Voice Intake
+          - status [ref=e16]: Listening — go ahead
+        - generic [ref=e18]:
+          - generic [ref=e19]:
+            - generic [ref=e20]: Required details
+            - generic [ref=e21]: 9 of 10
+          - 'progressbar "Required details completed: 9 of 10" [ref=e22]'
+        - log "Conversation" [ref=e24]:
+          - paragraph [ref=e25]:
+            - generic [ref=e26]: "Assistant:"
+            - text: Thank you for contacting Computer Systems Depot, your computer and technology support specialists. I'm your virtual service assistant, and I'll help you complete your service request today. You can answer my questions by speaking, and I'll fill out the form for you. Are you ready to get started?
+          - paragraph [ref=e27]:
+            - generic [ref=e28]: "You:"
+            - text: "yes"
+          - paragraph [ref=e29]:
+            - generic [ref=e30]: "Assistant:"
+            - text: Great, let's get started. Let's start with your full name, please.
+          - paragraph [ref=e31]:
+            - generic [ref=e32]: "You:"
+            - text: Sam Lee
+          - paragraph [ref=e33]:
+            - generic [ref=e34]: "Assistant:"
+            - text: Got it. Thanks, Sam. Is this request for a business? If so, what's the company name? If it's for personal use, just say skip.
+          - paragraph [ref=e35]:
+            - generic [ref=e36]: "You:"
+            - text: "no"
+          - paragraph [ref=e37]:
+            - generic [ref=e38]: "Assistant:"
+            - text: No problem. What's the best mobile phone number to reach you?
+          - paragraph [ref=e39]:
+            - generic [ref=e40]: "You:"
+            - text: 954 555 0188
+          - paragraph [ref=e41]:
+            - generic [ref=e42]: "Assistant:"
+            - text: "Let me confirm your phone number: 9 5 4, 5 5 5, 0 1 8 8. Is that correct?"
+          - paragraph [ref=e43]:
+            - generic [ref=e44]: "You:"
+            - text: "yes"
+          - paragraph [ref=e45]:
+            - generic [ref=e46]: "Assistant:"
+            - text: "Thank you. How would you prefer we contact you: a phone call, a text message, or email?"
+          - paragraph [ref=e47]:
+            - generic [ref=e48]: "You:"
+            - text: sam at example dot com
+          - paragraph [ref=e49]:
+            - generic [ref=e50]: "Assistant:"
+            - text: Got it. What kind of computer are you having trouble with? For example, a laptop, a desktop, or an all-in-one.
+          - paragraph [ref=e51]:
+            - generic [ref=e52]: "You:"
+            - text: "yes"
+          - paragraph [ref=e53]:
+            - generic [ref=e54]: "Assistant:"
+            - text: "I understand. Your Dell laptop isn't powering on. Which service do you need? The options are: Computer Repair, or Virus Removal."
+          - paragraph [ref=e55]:
+            - generic [ref=e56]: "You:"
+            - text: call me
+          - paragraph [ref=e57]:
+            - generic [ref=e58]: "Assistant:"
+            - text: "Sorry, I didn't quite catch that. Which service do you need? The options are: Computer Repair, or Virus Removal."
+          - paragraph [ref=e59]:
+            - generic [ref=e60]: "You:"
+            - text: It's a Dell laptop, and it won't turn on.
+          - paragraph [ref=e61]:
+            - generic [ref=e62]: "Assistant:"
+            - text: "Sorry, I didn't quite catch that. Which service do you need? The options are: Computer Repair, or Virus Removal."
+        - form "Type an answer" [ref=e63]:
+          - generic [ref=e64]: Type your answer
+          - textbox "Type your answer" [ref=e65]:
+            - /placeholder: Or type your answer here
+          - button "Send" [disabled]
+        - toolbar "Voice intake controls" [ref=e66]:
+          - button "Speak" [disabled]:
+            - img
+            - text: Speak
+          - button "Type instead" [ref=e67] [cursor=pointer]:
+            - img
+            - text: Type instead
+          - button "Repeat question" [ref=e68] [cursor=pointer]:
+            - img
+            - text: Repeat question
+          - button "Pause" [ref=e69] [cursor=pointer]:
+            - img
+            - text: Pause
+          - button "Mute assistant" [ref=e70] [cursor=pointer]:
+            - img
+            - text: Mute assistant
+          - button "Next question" [ref=e71] [cursor=pointer]:
+            - img
+            - text: Next question
+          - button "Exit voice intake" [ref=e72] [cursor=pointer]:
+            - img
+            - text: Exit voice intake
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - text: Assistant volume
+            - generic "Assistant volume" [ref=e75]:
+              - slider [ref=e79]
+          - generic [ref=e80]:
+            - text: Speaking speed
+            - generic "Speaking speed" [ref=e81]:
+              - slider [ref=e85]
+        - generic [ref=e86]:
+          - paragraph [ref=e87]: Your answers so far
+          - generic [ref=e88]:
+            - generic [ref=e89]:
+              - img "Completed" [ref=e90]
+              - generic [ref=e93]:
+                - term [ref=e94]: Full name
+                - definition [ref=e95]: Sam Lee
+            - generic [ref=e96]:
+              - img "Optional" [ref=e97]
+              - generic [ref=e99]:
+                - term [ref=e100]: Company (optional)
+                - definition [ref=e101]: —
+            - generic [ref=e102]:
+              - img "Completed" [ref=e103]
+              - generic [ref=e106]:
+                - term [ref=e107]: Mobile phone
+                - definition [ref=e108]: "9545550188"
+            - generic [ref=e109]:
+              - img "Completed" [ref=e110]
+              - generic [ref=e113]:
+                - term [ref=e114]: Email
+                - definition [ref=e115]: —
+            - generic [ref=e116]:
+              - img "Completed" [ref=e117]
+              - generic [ref=e120]:
+                - term [ref=e121]: Preferred contact
+                - definition [ref=e122]: Phone call
+            - generic [ref=e123]:
+              - img "Completed" [ref=e124]
+              - generic [ref=e127]:
+                - term [ref=e128]: Device type
+                - definition [ref=e129]: Laptop
+            - generic [ref=e130]:
+              - img "Completed" [ref=e131]
+              - generic [ref=e134]:
+                - term [ref=e135]: Brand & model
+                - definition [ref=e136]: Dell
+            - generic [ref=e137]:
+              - img "Completed" [ref=e138]
+              - generic [ref=e141]:
+                - term [ref=e142]: Operating system
+                - definition [ref=e143]: —
+            - generic [ref=e144]:
+              - img "Completed" [ref=e145]
+              - generic [ref=e148]:
+                - term [ref=e149]: Problem description
+                - definition [ref=e150]: It won't turn on.
+            - generic [ref=e151]:
+              - img "Required, missing" [ref=e152]
+              - generic [ref=e154]:
+                - term [ref=e155]: Service
+                - definition [ref=e156]: —
+            - generic [ref=e157]:
+              - img "Completed" [ref=e158]
+              - generic [ref=e161]:
+                - term [ref=e162]: Service address (optional)
+                - definition [ref=e163]: FL
+            - generic [ref=e164]:
+              - img "Completed" [ref=e165]
+              - generic [ref=e168]:
+                - term [ref=e169]: How you heard about us
+                - definition [ref=e170]: —
+          - paragraph [ref=e171]: "Text-message updates: not selected (optional, tick the box on the form if you want them)."
+      - generic [ref=e172]:
+        - generic [ref=e173]:
+          - heading "Contact Information" [level=3] [ref=e174]
+          - generic [ref=e175]:
+            - text: Full Name *
+            - textbox "Full Name *" [ref=e176]:
+              - /placeholder: John Smith
+              - text: Sam Lee
+          - generic [ref=e177]:
+            - text: Company
+            - textbox "Company" [ref=e178]:
+              - /placeholder: Acme Corp (leave blank if personal)
+            - paragraph [ref=e179]: "Business customers: we'll file this request under your company account."
+          - generic [ref=e180]:
+            - text: Mobile Phone Number
+            - textbox "Mobile Phone Number" [ref=e181]:
+              - /placeholder: (555) 123-4567
+              - text: "9545550188"
+            - paragraph [ref=e182]: Provide a phone number or an email address. Phone is needed for calls or texts.
+          - generic [ref=e183]:
+            - text: Email Address
+            - textbox "Email Address" [ref=e184]:
+              - /placeholder: john@example.com
+            - paragraph [ref=e185]: Email is needed only if you prefer email contact or do not provide a phone number.
+          - generic [ref=e186]:
+            - text: Service Address
+            - textbox "Service Address" [ref=e187]:
+              - /placeholder: 123 Main Street
+            - paragraph [ref=e188]: Optional — needed only for on-site visits and pickup/return.
+          - generic [ref=e189]:
+            - generic [ref=e190]:
+              - text: City
+              - textbox "City" [ref=e191]:
+                - /placeholder: Lauderhill
+            - generic [ref=e192]:
+              - text: State
+              - textbox "State" [ref=e193]:
+                - /placeholder: FL
+                - text: FL
+            - generic [ref=e194]:
+              - text: ZIP
+              - textbox "ZIP" [ref=e195]:
+                - /placeholder: "33313"
+          - generic [ref=e196]:
+            - text: Preferred Contact Method
+            - radiogroup [ref=e197]:
+              - generic [ref=e198]:
+                - radio "Phone Call" [checked] [ref=e199] [cursor=pointer]:
+                  - img [ref=e201]
+                - radio [checked]
+                - generic [ref=e203]: Phone Call
+              - generic [ref=e204]:
+                - radio "Text Message" [ref=e205] [cursor=pointer]
+                - radio
+                - generic [ref=e206]: Text Message
+              - generic [ref=e207]:
+                - radio "Email" [ref=e208] [cursor=pointer]
+                - radio
+                - generic [ref=e209]: Email
+          - generic [ref=e210]:
+            - checkbox "I agree to receive text messages from Computer Systems Depot Inc. at the mobile number provided, regarding my service request — including repair and ticket status updates, appointment reminders, and service alerts. Message frequency varies. Message & data rates may apply. Consent is not a condition of purchase. Reply STOP to unsubscribe or HELP for help. View our Privacy Policy and our Terms and Conditions." [ref=e211] [cursor=pointer]
+            - checkbox
+            - generic [ref=e212]:
+              - generic [ref=e213]:
+                - text: I agree to receive text messages from Computer Systems Depot Inc. at the mobile number provided, regarding my service request — including repair and ticket status updates, appointment reminders, and service alerts. Message frequency varies. Message & data rates may apply. Consent is not a condition of purchase. Reply STOP to unsubscribe or HELP for help.
+                - link "View our Privacy Policy" [ref=e214] [cursor=pointer]:
+                  - /url: https://www.computersystemsdepot.com/privacy-policy/
+                - text: and our
+                - link "Terms and Conditions" [ref=e215] [cursor=pointer]:
+                  - /url: https://www.computersystemsdepot.com/terms-and-conditions/
+                - text: .
+              - paragraph [ref=e216]:
+                - text: Optional — consent is not required to use our service or submit this form. You can also opt in by texting START to
+                - link "954-637-7300" [ref=e217] [cursor=pointer]:
+                  - /url: sms:+19546377300
+                - text: .
+        - generic [ref=e218]:
+          - heading "Service Details" [level=3] [ref=e219]
+          - generic [ref=e220]:
+            - text: What service do you need? *
+            - combobox "What service do you need? *" [ref=e221] [cursor=pointer]:
+              - generic: Select a service
+              - img [ref=e222]
+            - combobox [ref=e224]
+          - generic [ref=e225]:
+            - text: What type of device? *
+            - combobox "What type of device? *" [ref=e226] [cursor=pointer]:
+              - generic: Laptop
+              - img [ref=e227]
+            - combobox [ref=e229]
+          - generic [ref=e230]:
+            - text: Device Brand & Model
+            - textbox "Device Brand & Model" [ref=e231]:
+              - /placeholder: e.g., Dell Inspiron 15, HP Pavilion, MacBook Pro
+              - text: Dell
+            - paragraph [ref=e232]: Optional — skip this if you are not sure.
+          - generic [ref=e233]:
+            - generic [ref=e234]:
+              - paragraph [ref=e235]: Photo of your device
+              - paragraph [ref=e236]: Take one picture of the front of your computer, laptop or device so our technicians can recognize it.
+            - generic [ref=e237]:
+              - button "Take a photo" [ref=e238] [cursor=pointer]:
+                - img
+                - text: Take a photo
+              - button "Upload a photo" [ref=e239] [cursor=pointer]:
+                - img
+                - text: Upload a photo
+          - generic [ref=e240]:
+            - text: Operating System
+            - combobox "Operating System" [ref=e241] [cursor=pointer]:
+              - generic: Select operating system
+              - img [ref=e242]
+            - combobox [ref=e244]
+            - paragraph [ref=e245]: Optional — choose one if you know it.
+          - generic [ref=e246]:
+            - text: Describe the problem you're experiencing *
+            - textbox "Describe the problem you're experiencing *" [ref=e247]:
+              - /placeholder: A short description is enough. Include any error message if you know it.
+              - text: It won't turn on.
+            - paragraph [ref=e248]: A brief description is required; you can add more details later.
+        - generic [ref=e249]:
+          - heading "How did you find us?" [level=3] [ref=e250]
+          - generic [ref=e251]:
+            - text: How did you hear about Computer Systems Depot?
+            - combobox "How did you hear about Computer Systems Depot?" [ref=e252] [cursor=pointer]:
+              - generic: Please select
+              - img [ref=e253]
+            - combobox [ref=e255]
+            - paragraph [ref=e256]: Optional.
+        - generic [ref=e257]:
+          - heading "Call Information" [level=3] [ref=e258]
+          - generic [ref=e259]:
+            - checkbox "Are you currently on the phone with us?" [ref=e260] [cursor=pointer]
+            - checkbox
+            - generic [ref=e261]:
+              - text: Are you currently on the phone with us?
+              - paragraph [ref=e262]: Check if you were directed to this form during an active call.
+        - button "Submit Service Request" [ref=e263] [cursor=pointer]
+  - region "Notifications (F8)":
+    - list
+```
