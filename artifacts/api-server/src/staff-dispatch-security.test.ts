@@ -359,6 +359,9 @@ test("database-backed dispatch commands enforce roster, assignment, consent, and
       "delivered",
       null,
       Number(stranded.rows[0].id),
+      // Customer texts always carry this kind in their status-callback URL
+      // (twilio.ts); without it a callback only matches by provider SID.
+      "staff-client",
     );
     await updateStaffClientMessageAfterSend(
       Number(stranded.rows[0].id),

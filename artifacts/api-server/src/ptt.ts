@@ -372,6 +372,19 @@ export function shouldForwardBrowserAudioToRoip(input: {
     input.transportReady;
 }
 
+export function isPttChannelId(value: unknown): value is ChannelId {
+  return channelExists(value);
+}
+
+/** The talk group each connected PTT user is monitoring (undefined = connected, no channel yet). */
+export function connectedPttUserChannels(): Map<string, ChannelId | undefined> {
+  const channels = new Map<string, ChannelId | undefined>();
+  for (const client of pttClientsByUser.values()) {
+    if (!client.closed) channels.set(client.user.id, client.channelId);
+  }
+  return channels;
+}
+
 function channelExists(value: unknown): value is ChannelId {
   return PTT_CHANNELS.some((channel) => channel.id === value);
 }

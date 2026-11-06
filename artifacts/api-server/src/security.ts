@@ -139,6 +139,7 @@ export function requiredFeatureForApiPath(path: string, method = "GET"): StaffFe
   if (path === "/api/staff-dispatch/settings" || path.startsWith("/api/staff-dispatch/settings/")) return "owner";
   if (path === "/api/staff-dispatch" || path.startsWith("/api/staff-dispatch/")) return "dispatchAdmin";
   if (path === "/api/call-tracking" || path.startsWith("/api/call-tracking/")) return "communications";
+  if (path === "/api/ptt/roster" || path === "/api/ptt/pages" || path.startsWith("/api/ptt/pages/")) return "communications";
   if (path === "/api/sms/inbox" || path.startsWith("/api/sms/inbox/")) return "communications";
   if (path === "/api/communications" || path.startsWith("/api/communications/")) return "communications";
   // Call/SMS forwarding and the main-line setup decide where customer calls go;

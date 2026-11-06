@@ -52,6 +52,8 @@ import { applyStaffAvatarsMigration } from "./migrations/2026-11-06-staff-avatar
 import { registerStaffProfileRoutes } from "./staff-profile";
 import { applyStaffBusinessCardsMigration } from "./migrations/2026-11-06-staff-business-cards";
 import { registerStaffBusinessCardRoutes } from "./staff-business-card";
+import { applyPttPagesMigration } from "./migrations/2026-11-06-ptt-pages";
+import { registerPttPageRoutes } from "./ptt-pages";
 import { applySlackDeliveryHealthMigration } from "./migrations/2026-09-22-slack-delivery-health";
 import { applySlackNotificationOutboxMigration } from "./migrations/2026-09-27-slack-notification-outbox";
 import { applyStaffInvitesMigration } from "./migrations/2026-09-23-staff-invites";
@@ -368,6 +370,11 @@ async function initStripe() {
     logger.error({ error: err }, "Staff business cards migration failed");
   }
   try {
+    await applyPttPagesMigration();
+  } catch (err: any) {
+    logger.error({ error: err }, "PTT pages migration failed");
+  }
+  try {
     await applyCustomerLinkMigration();
   } catch (err: any) {
     logger.warn({ error: err }, "Customer link migration skipped");
@@ -444,6 +451,7 @@ async function initStripe() {
   registerStaffAccessRoutes(app);
   registerStaffProfileRoutes(app);
   registerStaffBusinessCardRoutes(app);
+  registerPttPageRoutes(app);
   registerStaffContactProfileRoutes(app, requireStaffAdministrator, { isOwnerEmail: isAdminEmail });
   registerStaffInviteRoutes(app);
   registerStaffAccountDeletionRoutes(app);
