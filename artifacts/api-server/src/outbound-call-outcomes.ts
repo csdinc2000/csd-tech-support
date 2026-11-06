@@ -37,36 +37,7 @@ export type NewOutboundCallOutcome = Pick<
   "callId" | "userId" | "contactId" | "customerNumber" | "mode" | "status"
 >;
 
-let schemaReady: Promise<void> | null = null;
-
-export async function ensureOutboundCallOutcomesSchema(): Promise<void> {
-  if (!schemaReady) {
-    schemaReady = pool.query(`
-      CREATE TABLE IF NOT EXISTS outbound_call_outcomes (
-        call_id UUID PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        contact_id INTEGER,
-        customer_number TEXT NOT NULL,
-        mode TEXT NOT NULL CHECK (mode IN ('callback', 'browser')),
-        status TEXT NOT NULL,
-        parent_call_sid TEXT,
-        child_call_sid TEXT,
-        duration_seconds INTEGER NOT NULL DEFAULT 0,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS outbound_call_outcomes_user_created_idx
-        ON outbound_call_outcomes (user_id, created_at DESC);
-    `).then(() => undefined).catch((error) => {
-      schemaReady = null;
-      throw error;
-    });
-  }
-  await schemaReady;
-}
-
 export async function createOutboundCallOutcome(input: NewOutboundCallOutcome): Promise<void> {
-  await ensureOutboundCallOutcomesSchema();
   await pool.query(
     `INSERT INTO outbound_call_outcomes
       (call_id, user_id, contact_id, customer_number, mode, status)
@@ -84,7 +55,6 @@ export async function updateOutboundCallOutcome(
     durationSeconds?: number;
   },
 ): Promise<void> {
-  await ensureOutboundCallOutcomesSchema();
   await pool.query(
     `UPDATE outbound_call_outcomes
      SET status = $2,
@@ -104,7 +74,6 @@ export async function updateOutboundCallOutcome(
 }
 
 export async function getOutboundCallOutcome(callId: string): Promise<OutboundCallOutcome | null> {
-  await ensureOutboundCallOutcomesSchema();
   const result = await pool.query(
     `SELECT call_id, user_id, contact_id, customer_number, mode, status,
             parent_call_sid, child_call_sid, duration_seconds, created_at, updated_at

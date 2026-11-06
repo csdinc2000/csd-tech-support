@@ -69,6 +69,7 @@ import { pool } from "./db";
 import { applyCallForwardingStaffOutcomesMigration } from "./migrations/2026-10-27-call-forwarding-staff-outcomes";
 import { applySharedInboxMigration } from "./migrations/2026-10-30-shared-inbox";
 import { applyReferralsMigration } from "./migrations/2026-10-30-referrals";
+import { applyOutboundCallOutcomesMigration } from "./migrations/2026-11-06-outbound-call-outcomes";
 
 const log = (message: string) => logger.info(message);
 
@@ -432,6 +433,11 @@ async function initStripe() {
     await applyReferralsMigration();
   } catch (err: any) {
     logger.error({ error: err }, "Referrals migration failed");
+  }
+  try {
+    await applyOutboundCallOutcomesMigration();
+  } catch (err: any) {
+    logger.error({ error: err }, "Outbound call outcomes migration failed");
   }
   await initStripe();
   startCatalogReconciliationWorker();
