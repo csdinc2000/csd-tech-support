@@ -245,6 +245,22 @@ test("browser token issuance requires approved staff and editable contact assign
   assert.equal((await unapproved.postBrowser({ to: CUSTOMER, contactId: 7 })).status, 403);
 });
 
+test("browser callback rejects contact access revoked after token issuance", async (t) => {
+  let canEdit = true;
+  const server = await startServer(t, {}, "ready", { canEditContact: () => canEdit });
+  const tokenResponse = await server.postBrowser({ to: CUSTOMER, contactId: 7 });
+  const token = await tokenResponse.json() as { callGrant: string; callId: string; identity: string };
+  canEdit = false;
+  const response = await signedPost(server.url, "/webhooks/voice/browser-connect", {
+    CallGrant: token.callGrant,
+    To: CUSTOMER,
+    From: `client:${token.identity}`,
+    CallSid: "CA-revoked-access",
+  });
+  assert.equal(response.status, 403);
+  assert.equal(server.outcomes.get(token.callId)?.status, "failed");
+});
+
 test("browser calls use a signed grant, recheck access, and record customer-leg results", async (t) => {
   const { url, postBrowser, getStatus, logged, outcomes } = await startServer(t);
   const tokenResponse = await postBrowser({ to: CUSTOMER, contactId: 7 });
