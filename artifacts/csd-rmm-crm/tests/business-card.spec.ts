@@ -20,6 +20,15 @@ test("shows the technician's public card with contact links, save button and QR 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/tests/business-card.fixture.html");
 
+  // The company logo sits centred above the profile picture.
+  const logo = page.getByTestId("card-company-logo").locator("img");
+  await expect(logo).toBeVisible();
+  await expect(logo).toHaveAttribute("alt", "Computer Systems Depot");
+  expect(await logo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  const logoBox = (await logo.boundingBox())!;
+  const photoBox = (await page.getByTestId("business-card").locator(".rounded-full").first().boundingBox())!;
+  expect(logoBox.y + logoBox.height).toBeLessThanOrEqual(photoBox.y);
+  expect(Math.abs((logoBox.x + logoBox.width / 2) - (photoBox.x + photoBox.width / 2))).toBeLessThan(2);
   await expect(page.getByTestId("card-name")).toHaveText("Tess Tech");
   await expect(page.getByTestId("card-title")).toHaveText("Bench Technician");
   await expect(page.getByTestId("card-headline")).toContainText("repair specialist");

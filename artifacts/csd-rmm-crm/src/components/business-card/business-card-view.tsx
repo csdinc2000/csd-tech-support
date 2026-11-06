@@ -1,6 +1,7 @@
 import { Calendar, Download, Globe, Mail, Phone, Smartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatPhone, telHref, type BusinessCardData } from "@/lib/business-card";
+import csdLogo from "@assets/cropped-CSD-Logo-New_2_1765066834661.png";
 import { QrCode } from "./qr-code";
 
 function initials(card: BusinessCardData) {
@@ -35,9 +36,11 @@ export function BusinessCardView({ card, showQr = true, preview = false, classNa
 
   return (
     <div className={cn("w-full max-w-sm overflow-hidden rounded-2xl bg-white text-gray-900 shadow-xl ring-1 ring-black/5", className)} data-testid="business-card">
-      <div className={cn("relative h-24 bg-gradient-to-br", accentBg)}>
-        <div className="absolute left-4 top-3 text-xs font-semibold uppercase tracking-widest text-white/90">{card.company.name}</div>
+      {/* Company logo on its own white strip: the logo is dark red/black and would vanish on the accent band. */}
+      <div className="flex h-16 items-center justify-center bg-white px-6" data-testid="card-company-logo">
+        <img src={csdLogo} alt={card.company.name || "Computer Systems Depot Inc."} className="h-10 w-auto max-w-[220px] object-contain" />
       </div>
+      <div className={cn("h-20 bg-gradient-to-br", accentBg)} />
       <div className="relative -mt-14 flex flex-col items-center px-6 pb-6 text-center">
         <div className="h-28 w-28 overflow-hidden rounded-full border-4 border-white bg-gray-100 shadow-md">
           {card.photoUrl ? (
