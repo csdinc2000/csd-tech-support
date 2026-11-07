@@ -27,7 +27,7 @@ export function MarketingCard({
 }) {
   return (
     <section data-testid={testId} className={cn("flex min-w-0 flex-col rounded-lg border border-gray-200 bg-white shadow-sm", className)}>
-      <header className="flex flex-col gap-2 border-b border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-2 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-2.5">
           {Icon && (
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-csd-red/10 text-csd-red ring-1 ring-csd-red/15">
@@ -36,7 +36,7 @@ export function MarketingCard({
           )}
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-            {description && <p className="text-xs text-gray-500">{description}</p>}
+            {description && <p className="text-xs text-gray-600">{description}</p>}
           </div>
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

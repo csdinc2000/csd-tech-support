@@ -157,12 +157,12 @@ export function WebsiteIntelligence() {
             <div className="space-y-1.5">
               <Label htmlFor="website-search-location" className="text-xs font-medium text-gray-700">Search location</Label>
               <div className="relative">
-                <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600" />
                 <Input
                   id="website-search-location"
                   value={searchLocation}
                   onChange={(event) => setSearchLocation(event.target.value)}
-                  className="pl-9"
+                  className="pl-9 placeholder:text-gray-600"
                   placeholder="City, state"
                   maxLength={200}
                   required
@@ -196,11 +196,11 @@ export function WebsiteIntelligence() {
             </div>
           </form>
           <div className="flex flex-wrap gap-2 text-xs">
-            <span className={cn("rounded-full px-2.5 py-1 font-medium", status?.googlePlacesConfigured ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800")}>
+            <span className={cn("rounded-full px-2.5 py-1 font-medium", status?.googlePlacesConfigured ? "bg-emerald-100 text-emerald-900" : "bg-amber-100 text-amber-900")}>
               Google Places {status?.googlePlacesConfigured ? "ready" : "not configured"}
             </span>
-            <span className="rounded-full bg-sky-50 px-2.5 py-1 font-medium text-sky-800">OpenStreetMap fallback available</span>
-            <span className={cn("rounded-full px-2.5 py-1 font-medium", status?.whatCmsConfigured ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800")}>
+            <span className="rounded-full bg-sky-100 px-2.5 py-1 font-medium text-sky-900">OpenStreetMap fallback available</span>
+            <span className={cn("rounded-full px-2.5 py-1 font-medium", status?.whatCmsConfigured ? "bg-emerald-100 text-emerald-900" : "bg-amber-100 text-amber-900")}>
               WhatCMS {status?.whatCmsConfigured ? "ready" : "needs API key"}
             </span>
           </div>
@@ -234,7 +234,7 @@ export function WebsiteIntelligence() {
             role="tab"
             aria-selected={view === id}
             onClick={() => setView(id)}
-            className={cn("rounded-md px-3 py-2 text-sm font-medium", view === id ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100")}
+            className={cn("rounded-md px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-csd-red focus-visible:ring-offset-2", view === id ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-gray-100")}
             data-testid={`website-view-${id}`}
           >
             {label}
@@ -250,7 +250,7 @@ export function WebsiteIntelligence() {
           testId="website-business-results"
         >
           {discovery && (
-            <div className="mb-3 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600" data-testid="website-provider-note">
+            <div className="mb-3 rounded-md bg-gray-100 px-3 py-2 text-xs text-gray-800" data-testid="website-provider-note">
               <p>{discovery.source === "google_places" ? "Google Places" : "OpenStreetMap"} · {discovery.providerNote}</p>
               {discovery.source === "openstreetmap" && (
                 <p className="mt-1">
@@ -273,7 +273,7 @@ export function WebsiteIntelligence() {
                 type="button"
                 aria-pressed={technologyFilter === value}
                 onClick={() => setTechnologyFilter(value)}
-                className={cn("rounded-full border px-3 py-1 text-xs font-medium", technologyFilter === value ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 text-gray-600 hover:border-gray-400")}
+                className={cn("rounded-full border px-3 py-1 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-csd-red focus-visible:ring-offset-2", technologyFilter === value ? "border-gray-900 bg-gray-900 text-white" : "border-gray-300 text-gray-700 hover:border-gray-500")}
                 data-testid={`website-filter-${value}`}
               >
                 {label}
@@ -294,12 +294,12 @@ export function WebsiteIntelligence() {
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 space-y-1">
                       <h3 className="truncate text-sm font-semibold text-gray-900">{business.name}</h3>
-                      <p className="text-xs text-gray-600">{business.category}{business.location ? ` · ${business.location}` : ""}</p>
-                      <a className="inline-flex max-w-full items-center gap-1 break-all text-xs text-blue-700 hover:underline" href={business.website} target="_blank" rel="noreferrer">
+                      <p className="text-xs text-gray-700">{business.category}{business.location ? ` · ${business.location}` : ""}</p>
+                      <a className="inline-flex max-w-full items-center gap-1 break-all text-xs font-medium text-blue-800 underline hover:text-blue-900" href={business.website} target="_blank" rel="noreferrer">
                         {domainLabel(business.website)} <ExternalLink className="h-3 w-3 shrink-0" />
                       </a>
                       {report && (
-                        <p className="text-xs text-gray-600">
+                        <p className="text-xs text-gray-700">
                           {report.status === "success" ? [report.cms, ...report.technologies].filter(Boolean).join(" · ") || "Technology check completed" : report.message}
                         </p>
                       )}
@@ -318,8 +318,8 @@ export function WebsiteIntelligence() {
                       </Button>
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-col gap-2 rounded-md border border-gray-100 bg-gray-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <label className="flex items-start gap-2 text-xs leading-relaxed text-gray-700">
+                  <div className="mt-3 flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <label className="flex items-start gap-2 text-xs leading-relaxed text-gray-800">
                       <input
                         type="checkbox"
                         checked={authorized}
@@ -363,11 +363,11 @@ export function WebsiteIntelligence() {
               <li key={report.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between" data-testid={`website-report-${report.id}`}>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-gray-900">{domainLabel(report.website)}</p>
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-gray-700">
                     {report.status.replace("_", " ")} · {[report.cms, ...report.technologies].filter(Boolean).join(", ") || report.message || "No technology detected"}
                   </p>
                 </div>
-                <time className="shrink-0 text-xs text-gray-500" dateTime={report.createdAt}>{new Date(report.createdAt).toLocaleString()}</time>
+                <time className="shrink-0 text-xs text-gray-700" dateTime={report.createdAt}>{new Date(report.createdAt).toLocaleString()}</time>
               </li>
             ))}
           </ul>
@@ -383,10 +383,10 @@ export function WebsiteIntelligence() {
               <li key={`${lead.provider}:${lead.externalId}`} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between" data-testid={`website-lead-${lead.externalId}`}>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-gray-900">{lead.name}</p>
-                  <p className="text-xs text-gray-600">{lead.category} · {domainLabel(lead.website)}</p>
-                  <p className="text-[11px] text-gray-500">Saved {new Date(lead.savedAt).toLocaleDateString()} · {lead.provider === "google_places" ? "Google Places" : "OpenStreetMap"}</p>
+                  <p className="text-xs text-gray-700">{lead.category} · {domainLabel(lead.website)}</p>
+                  <p className="text-xs text-gray-700">Saved {new Date(lead.savedAt).toLocaleDateString()} · {lead.provider === "google_places" ? "Google Places" : "OpenStreetMap"}</p>
                 </div>
-                <a href={lead.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline">
+                <a href={lead.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-blue-800 underline hover:text-blue-900">
                   Open website <SquareArrowOutUpRight className="h-3 w-3" />
                 </a>
               </li>
@@ -402,13 +402,13 @@ function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white px-3 py-3 shadow-sm">
       <p className="text-xl font-bold tabular-nums text-gray-900">{value}</p>
-      <p className="text-xs text-gray-600">{label}</p>
+      <p className="text-xs text-gray-700">{label}</p>
     </div>
   );
 }
 
 function EmptyState({ children }: { children: React.ReactNode }) {
-  return <p className="py-8 text-center text-sm text-gray-500">{children}</p>;
+  return <p className="py-8 text-center text-sm text-gray-700">{children}</p>;
 }
 
 function ExternalLinkButton({ href, label }: { href: string; label: string }) {
