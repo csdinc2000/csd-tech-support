@@ -39,9 +39,14 @@ import type {
   ListAriaActionsParams,
   ListStaffAccessAccountsParams,
   LocalBusinessAuditInput,
+  LocalBusinessAuditReportList,
   LocalBusinessAuditResult,
   LocalBusinessDiscoveryInput,
   LocalBusinessDiscoveryResult,
+  LocalBusinessIntelligenceStatus,
+  LocalBusinessSavedLead,
+  LocalBusinessSavedLeadInput,
+  LocalBusinessSavedLeadList,
   MeetingStaffList,
   SearchCommunicationRecipientsParams,
   SendIntakeEmail200,
@@ -460,6 +465,83 @@ export const useCancelAriaAction = <TError = ErrorType<unknown>,
       return useMutation(getCancelAriaActionMutationOptions(options));
     }
 
+export const getGetLocalBusinessIntelligenceStatusUrl = () => {
+
+
+
+
+  return `/api/crm/local-opportunities/status`
+}
+
+/**
+ * @summary Read provider configuration for website intelligence
+ */
+export const getLocalBusinessIntelligenceStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<LocalBusinessIntelligenceStatus> => {
+
+  return customFetch<LocalBusinessIntelligenceStatus>(getGetLocalBusinessIntelligenceStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLocalBusinessIntelligenceStatusQueryKey = () => {
+    return [
+    `/api/crm/local-opportunities/status`
+    ] as const;
+    }
+
+
+export const getGetLocalBusinessIntelligenceStatusQueryOptions = <TData = Awaited<ReturnType<typeof getLocalBusinessIntelligenceStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLocalBusinessIntelligenceStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLocalBusinessIntelligenceStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLocalBusinessIntelligenceStatus>>> = ({ signal }) => getLocalBusinessIntelligenceStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLocalBusinessIntelligenceStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLocalBusinessIntelligenceStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getLocalBusinessIntelligenceStatus>>>
+export type GetLocalBusinessIntelligenceStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read provider configuration for website intelligence
+ */
+
+export function useGetLocalBusinessIntelligenceStatus<TData = Awaited<ReturnType<typeof getLocalBusinessIntelligenceStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLocalBusinessIntelligenceStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLocalBusinessIntelligenceStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getDiscoverLocalBusinessOpportunitiesUrl = () => {
 
 
@@ -469,7 +551,7 @@ export const getDiscoverLocalBusinessOpportunitiesUrl = () => {
 }
 
 /**
- * @summary Find nearby OpenStreetMap businesses with public websites
+ * @summary Find nearby businesses with public websites
  */
 export const discoverLocalBusinessOpportunities = async (localBusinessDiscoveryInput: LocalBusinessDiscoveryInput, options?: Parameters<typeof customFetch>[1]): Promise<LocalBusinessDiscoveryResult> => {
 
@@ -518,7 +600,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type DiscoverLocalBusinessOpportunitiesMutationError = ErrorType<void>
 
     /**
- * @summary Find nearby OpenStreetMap businesses with public websites
+ * @summary Find nearby businesses with public websites
  */
 export const useDiscoverLocalBusinessOpportunities = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof discoverLocalBusinessOpportunities>>, TError,{data: BodyType<LocalBusinessDiscoveryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -531,6 +613,231 @@ export const useDiscoverLocalBusinessOpportunities = <TError = ErrorType<void>,
       return useMutation(getDiscoverLocalBusinessOpportunitiesMutationOptions(options));
     }
 
+export const getListLocalBusinessAuditReportsUrl = () => {
+
+
+
+
+  return `/api/crm/local-opportunities/reports`
+}
+
+/**
+ * @summary List saved passive technology reports
+ */
+export const listLocalBusinessAuditReports = async ( options?: Parameters<typeof customFetch>[1]): Promise<LocalBusinessAuditReportList> => {
+
+  return customFetch<LocalBusinessAuditReportList>(getListLocalBusinessAuditReportsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLocalBusinessAuditReportsQueryKey = () => {
+    return [
+    `/api/crm/local-opportunities/reports`
+    ] as const;
+    }
+
+
+export const getListLocalBusinessAuditReportsQueryOptions = <TData = Awaited<ReturnType<typeof listLocalBusinessAuditReports>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLocalBusinessAuditReports>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLocalBusinessAuditReportsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLocalBusinessAuditReports>>> = ({ signal }) => listLocalBusinessAuditReports({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLocalBusinessAuditReports>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLocalBusinessAuditReportsQueryResult = NonNullable<Awaited<ReturnType<typeof listLocalBusinessAuditReports>>>
+export type ListLocalBusinessAuditReportsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List saved passive technology reports
+ */
+
+export function useListLocalBusinessAuditReports<TData = Awaited<ReturnType<typeof listLocalBusinessAuditReports>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLocalBusinessAuditReports>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLocalBusinessAuditReportsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListLocalBusinessSavedLeadsUrl = () => {
+
+
+
+
+  return `/api/crm/local-opportunities/leads`
+}
+
+/**
+ * @summary List saved business prospects
+ */
+export const listLocalBusinessSavedLeads = async ( options?: Parameters<typeof customFetch>[1]): Promise<LocalBusinessSavedLeadList> => {
+
+  return customFetch<LocalBusinessSavedLeadList>(getListLocalBusinessSavedLeadsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLocalBusinessSavedLeadsQueryKey = () => {
+    return [
+    `/api/crm/local-opportunities/leads`
+    ] as const;
+    }
+
+
+export const getListLocalBusinessSavedLeadsQueryOptions = <TData = Awaited<ReturnType<typeof listLocalBusinessSavedLeads>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLocalBusinessSavedLeads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLocalBusinessSavedLeadsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLocalBusinessSavedLeads>>> = ({ signal }) => listLocalBusinessSavedLeads({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLocalBusinessSavedLeads>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLocalBusinessSavedLeadsQueryResult = NonNullable<Awaited<ReturnType<typeof listLocalBusinessSavedLeads>>>
+export type ListLocalBusinessSavedLeadsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List saved business prospects
+ */
+
+export function useListLocalBusinessSavedLeads<TData = Awaited<ReturnType<typeof listLocalBusinessSavedLeads>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLocalBusinessSavedLeads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLocalBusinessSavedLeadsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveLocalBusinessLeadUrl = () => {
+
+
+
+
+  return `/api/crm/local-opportunities/leads`
+}
+
+/**
+ * @summary Save a discovered business for staff review
+ */
+export const saveLocalBusinessLead = async (localBusinessSavedLeadInput: LocalBusinessSavedLeadInput, options?: Parameters<typeof customFetch>[1]): Promise<LocalBusinessSavedLead> => {
+
+  return customFetch<LocalBusinessSavedLead>(getSaveLocalBusinessLeadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(localBusinessSavedLeadInput)
+  }
+);}
+
+
+
+
+
+export const getSaveLocalBusinessLeadMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveLocalBusinessLead>>, TError,{data: BodyType<LocalBusinessSavedLeadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveLocalBusinessLead>>, TError,{data: BodyType<LocalBusinessSavedLeadInput>}, TContext> => {
+
+const mutationKey = ['saveLocalBusinessLead'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveLocalBusinessLead>>, {data: BodyType<LocalBusinessSavedLeadInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveLocalBusinessLead(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveLocalBusinessLeadMutationResult = NonNullable<Awaited<ReturnType<typeof saveLocalBusinessLead>>>
+    export type SaveLocalBusinessLeadMutationBody = BodyType<LocalBusinessSavedLeadInput>
+    export type SaveLocalBusinessLeadMutationError = ErrorType<void>
+
+    /**
+ * @summary Save a discovered business for staff review
+ */
+export const useSaveLocalBusinessLead = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveLocalBusinessLead>>, TError,{data: BodyType<LocalBusinessSavedLeadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveLocalBusinessLead>>,
+        TError,
+        {data: BodyType<LocalBusinessSavedLeadInput>},
+        TContext
+      > => {
+      return useMutation(getSaveLocalBusinessLeadMutationOptions(options));
+    }
+
 export const getAuditLocalBusinessWebsiteUrl = () => {
 
 
@@ -540,7 +847,7 @@ export const getAuditLocalBusinessWebsiteUrl = () => {
 }
 
 /**
- * @summary Check a public business website with WhatCMS
+ * @summary Check an explicitly authorized website with WhatCMS
  */
 export const auditLocalBusinessWebsite = async (localBusinessAuditInput: LocalBusinessAuditInput, options?: Parameters<typeof customFetch>[1]): Promise<LocalBusinessAuditResult> => {
 
@@ -589,7 +896,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type AuditLocalBusinessWebsiteMutationError = ErrorType<void>
 
     /**
- * @summary Check a public business website with WhatCMS
+ * @summary Check an explicitly authorized website with WhatCMS
  */
 export const useAuditLocalBusinessWebsite = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof auditLocalBusinessWebsite>>, TError,{data: BodyType<LocalBusinessAuditInput>}, TContext>, request?: SecondParameter<typeof customFetch>}

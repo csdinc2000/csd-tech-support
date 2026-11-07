@@ -8,6 +8,8 @@
 import type { LocalBusinessAuditResultStatus } from './localBusinessAuditResultStatus';
 
 export interface LocalBusinessAuditResult {
+  id: string;
+  website: string;
   status: LocalBusinessAuditResultStatus;
   /** @nullable */
   cms: string | null;
@@ -24,4 +26,5 @@ export interface LocalBusinessAuditResult {
      * @nullable
      */
   message: string | null;
+  createdAt: Date;
 }

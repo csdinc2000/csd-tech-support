@@ -5,13 +5,18 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { LocalBusinessOpportunityElementType } from './localBusinessOpportunityElementType';
+import type { LocalBusinessOpportunityProvider } from './localBusinessOpportunityProvider';
 
 export interface LocalBusinessOpportunity {
   id: string;
+  externalId: string;
+  provider: LocalBusinessOpportunityProvider;
   name: string;
   website: string;
   category: string;
-  elementType: LocalBusinessOpportunityElementType;
-  osmUrl: string;
+  location: string;
+  /** @nullable */
+  mapsUrl: string | null;
+  /** @nullable */
+  osmUrl: string | null;
 }

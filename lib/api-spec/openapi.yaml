@@ -103,10 +103,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AriaActionResult"
+  /crm/local-opportunities/status:
+    get:
+      operationId: getLocalBusinessIntelligenceStatus
+      summary: Read provider configuration for website intelligence
+      responses:
+        "200":
+          description: Provider configuration without exposing credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalBusinessIntelligenceStatus"
   /crm/local-opportunities/discover:
     post:
       operationId: discoverLocalBusinessOpportunities
-      summary: Find nearby OpenStreetMap businesses with public websites
+      summary: Find nearby businesses with public websites
       requestBody:
         required: true
         content:
@@ -124,10 +135,50 @@ paths:
           description: Invalid search radius
         "502":
           description: The public business directory could not be reached
+  /crm/local-opportunities/reports:
+    get:
+      operationId: listLocalBusinessAuditReports
+      summary: List saved passive technology reports
+      responses:
+        "200":
+          description: Recent reports
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalBusinessAuditReportList"
+  /crm/local-opportunities/leads:
+    get:
+      operationId: listLocalBusinessSavedLeads
+      summary: List saved business prospects
+      responses:
+        "200":
+          description: Saved prospects
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalBusinessSavedLeadList"
+    post:
+      operationId: saveLocalBusinessLead
+      summary: Save a discovered business for staff review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalBusinessSavedLeadInput"
+      responses:
+        "200":
+          description: Saved prospect
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalBusinessSavedLead"
+        "400":
+          description: Invalid prospect
   /crm/local-opportunities/audit:
     post:
       operationId: auditLocalBusinessWebsite
-      summary: Check a public business website with WhatCMS
+      summary: Check an explicitly authorized website with WhatCMS
       requestBody:
         required: true
         content:
@@ -143,6 +194,8 @@ paths:
                 $ref: "#/components/schemas/LocalBusinessAuditResult"
         "400":
           description: Invalid public website URL
+        "403":
+          description: Website authorization confirmation is required
         "429":
           description: The WhatCMS account or local request limit was reached
         "502":
@@ -706,24 +759,28 @@ components:
     LocalBusinessDiscoveryInput:
       type: object
       additionalProperties: false
-      required: [radiusMiles]
+      required: [searchLocation, radiusMiles]
       properties:
+        searchLocation: { type: string, minLength: 2, maxLength: 200 }
         radiusMiles: { type: integer, minimum: 1, maximum: 25 }
     LocalBusinessOpportunity:
       type: object
       additionalProperties: false
-      required: [id, name, website, category, elementType, osmUrl]
+      required: [id, externalId, provider, name, website, category, location, mapsUrl, osmUrl]
       properties:
         id: { type: string }
+        externalId: { type: string }
+        provider: { type: string, enum: [google_places, openstreetmap] }
         name: { type: string }
         website: { type: string, format: uri }
         category: { type: string }
-        elementType: { type: string, enum: [node, way, relation] }
-        osmUrl: { type: string, format: uri }
+        location: { type: string }
+        mapsUrl: { type: [string, "null"], format: uri }
+        osmUrl: { type: [string, "null"], format: uri }
     LocalBusinessDiscoveryResult:
       type: object
       additionalProperties: false
-      required: [businesses, total, radiusMiles, center, whatCmsConfigured]
+      required: [businesses, total, radiusMiles, searchLocation, source, providerNote, googlePlacesConfigured, whatCmsConfigured, activeSecurityTestsAvailable]
       properties:
         businesses:
           type: array
@@ -731,19 +788,36 @@ components:
           items: { $ref: "#/components/schemas/LocalBusinessOpportunity" }
         total: { type: integer, minimum: 0 }
         radiusMiles: { type: integer, minimum: 1, maximum: 25 }
-        center: { type: string }
+        searchLocation: { type: string }
+        source: { type: string, enum: [google_places, openstreetmap] }
+        providerNote: { type: string, maxLength: 300 }
+        googlePlacesConfigured: { type: boolean }
         whatCmsConfigured: { type: boolean }
+        activeSecurityTestsAvailable: { type: boolean, const: false }
+    LocalBusinessIntelligenceStatus:
+      type: object
+      additionalProperties: false
+      required: [defaultSearchLocation, googlePlacesConfigured, openStreetMapAvailable, whatCmsConfigured, activeSecurityTestsAvailable]
+      properties:
+        defaultSearchLocation: { type: string }
+        googlePlacesConfigured: { type: boolean }
+        openStreetMapAvailable: { type: boolean, const: true }
+        whatCmsConfigured: { type: boolean }
+        activeSecurityTestsAvailable: { type: boolean, const: false }
     LocalBusinessAuditInput:
       type: object
       additionalProperties: false
-      required: [website]
+      required: [website, authorizationConfirmed]
       properties:
         website: { type: string, format: uri, maxLength: 2048 }
+        authorizationConfirmed: { type: boolean, const: true }
     LocalBusinessAuditResult:
       type: object
       additionalProperties: false
-      required: [status, cms, language, technologies, isWordPressOpportunity, message]
+      required: [id, website, status, cms, language, technologies, isWordPressOpportunity, message, createdAt]
       properties:
+        id: { type: string, format: uuid }
+        website: { type: string, format: uri }
         status: { type: string, enum: [success, not_detected, unavailable, rate_limited] }
         cms: { type: ["string", "null"] }
         language: { type: ["string", "null"] }
@@ -753,6 +827,46 @@ components:
           items: { type: string, maxLength: 100 }
         isWordPressOpportunity: { type: boolean }
         message: { type: ["string", "null"], maxLength: 300 }
+        createdAt: { type: string, format: date-time }
+    LocalBusinessAuditReportList:
+      type: object
+      additionalProperties: false
+      required: [reports]
+      properties:
+        reports:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/LocalBusinessAuditResult" }
+    LocalBusinessSavedLeadInput:
+      type: object
+      additionalProperties: false
+      required: [business]
+      properties:
+        business: { $ref: "#/components/schemas/LocalBusinessOpportunity" }
+    LocalBusinessSavedLead:
+      type: object
+      additionalProperties: false
+      required: [id, externalId, provider, name, website, category, location, mapsUrl, osmUrl, savedAt]
+      properties:
+        id: { type: string }
+        externalId: { type: string }
+        provider: { type: string, enum: [google_places, openstreetmap] }
+        name: { type: string }
+        website: { type: string, format: uri }
+        category: { type: string }
+        location: { type: string }
+        mapsUrl: { type: [string, "null"], format: uri }
+        osmUrl: { type: [string, "null"], format: uri }
+        savedAt: { type: string, format: date-time }
+    LocalBusinessSavedLeadList:
+      type: object
+      additionalProperties: false
+      required: [leads]
+      properties:
+        leads:
+          type: array
+          maxItems: 500
+          items: { $ref: "#/components/schemas/LocalBusinessSavedLead" }
     CommunicationRecipient:
       type: object
       additionalProperties: false

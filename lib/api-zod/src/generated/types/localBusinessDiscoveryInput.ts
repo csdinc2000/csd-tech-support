@@ -8,6 +8,11 @@
 
 export interface LocalBusinessDiscoveryInput {
   /**
+     * @minLength 2
+     * @maxLength 200
+     */
+  searchLocation: string;
+  /**
      * @minimum 1
      * @maximum 25
      */

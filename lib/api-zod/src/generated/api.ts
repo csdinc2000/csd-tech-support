@@ -106,13 +106,29 @@ export const CancelAriaActionResponse = zod.object({
 
 
 /**
- * @summary Find nearby OpenStreetMap businesses with public websites
+ * @summary Read provider configuration for website intelligence
  */
+export const GetLocalBusinessIntelligenceStatusResponse = zod.object({
+  "defaultSearchLocation": zod.string(),
+  "googlePlacesConfigured": zod.boolean(),
+  "openStreetMapAvailable": zod.literal(true),
+  "whatCmsConfigured": zod.boolean(),
+  "activeSecurityTestsAvailable": zod.literal(false)
+})
+
+
+/**
+ * @summary Find nearby businesses with public websites
+ */
+export const discoverLocalBusinessOpportunitiesBodySearchLocationMin = 2;
+export const discoverLocalBusinessOpportunitiesBodySearchLocationMax = 200;
+
 export const discoverLocalBusinessOpportunitiesBodyRadiusMilesMax = 25;
 
 
 
 export const DiscoverLocalBusinessOpportunitiesBody = zod.object({
+  "searchLocation": zod.string().min(discoverLocalBusinessOpportunitiesBodySearchLocationMin).max(discoverLocalBusinessOpportunitiesBodySearchLocationMax),
   "radiusMiles": zod.number().int().min(1).max(discoverLocalBusinessOpportunitiesBodyRadiusMilesMax)
 })
 
@@ -122,33 +138,125 @@ export const discoverLocalBusinessOpportunitiesResponseTotalMin = 0;
 
 export const discoverLocalBusinessOpportunitiesResponseRadiusMilesMax = 25;
 
+export const discoverLocalBusinessOpportunitiesResponseProviderNoteMax = 300;
+
 
 
 export const DiscoverLocalBusinessOpportunitiesResponse = zod.object({
   "businesses": zod.array(zod.object({
   "id": zod.string(),
+  "externalId": zod.string(),
+  "provider": zod.enum(['google_places', 'openstreetmap']),
   "name": zod.string(),
   "website": zod.string().url(),
   "category": zod.string(),
-  "elementType": zod.enum(['node', 'way', 'relation']),
-  "osmUrl": zod.string().url()
+  "location": zod.string(),
+  "mapsUrl": zod.string().url().nullable(),
+  "osmUrl": zod.string().url().nullable()
 })).max(discoverLocalBusinessOpportunitiesResponseBusinessesMax),
   "total": zod.number().int().min(discoverLocalBusinessOpportunitiesResponseTotalMin),
   "radiusMiles": zod.number().int().min(1).max(discoverLocalBusinessOpportunitiesResponseRadiusMilesMax),
-  "center": zod.string(),
-  "whatCmsConfigured": zod.boolean()
+  "searchLocation": zod.string(),
+  "source": zod.enum(['google_places', 'openstreetmap']),
+  "providerNote": zod.string().max(discoverLocalBusinessOpportunitiesResponseProviderNoteMax),
+  "googlePlacesConfigured": zod.boolean(),
+  "whatCmsConfigured": zod.boolean(),
+  "activeSecurityTestsAvailable": zod.literal(false)
 })
 
 
 /**
- * @summary Check a public business website with WhatCMS
+ * @summary List saved passive technology reports
+ */
+export const listLocalBusinessAuditReportsResponseReportsItemTechnologiesItemMax = 100;
+
+export const listLocalBusinessAuditReportsResponseReportsItemTechnologiesMax = 50;
+
+export const listLocalBusinessAuditReportsResponseReportsItemMessageMax = 300;
+
+export const listLocalBusinessAuditReportsResponseReportsMax = 100;
+
+
+
+export const ListLocalBusinessAuditReportsResponse = zod.object({
+  "reports": zod.array(zod.object({
+  "id": zod.string().uuid(),
+  "website": zod.string().url(),
+  "status": zod.enum(['success', 'not_detected', 'unavailable', 'rate_limited']),
+  "cms": zod.string().nullable(),
+  "language": zod.string().nullable(),
+  "technologies": zod.array(zod.string().max(listLocalBusinessAuditReportsResponseReportsItemTechnologiesItemMax)).max(listLocalBusinessAuditReportsResponseReportsItemTechnologiesMax),
+  "isWordPressOpportunity": zod.boolean(),
+  "message": zod.string().max(listLocalBusinessAuditReportsResponseReportsItemMessageMax).nullable(),
+  "createdAt": zod.coerce.date()
+})).max(listLocalBusinessAuditReportsResponseReportsMax)
+})
+
+
+/**
+ * @summary List saved business prospects
+ */
+export const listLocalBusinessSavedLeadsResponseLeadsMax = 500;
+
+
+
+export const ListLocalBusinessSavedLeadsResponse = zod.object({
+  "leads": zod.array(zod.object({
+  "id": zod.string(),
+  "externalId": zod.string(),
+  "provider": zod.enum(['google_places', 'openstreetmap']),
+  "name": zod.string(),
+  "website": zod.string().url(),
+  "category": zod.string(),
+  "location": zod.string(),
+  "mapsUrl": zod.string().url().nullable(),
+  "osmUrl": zod.string().url().nullable(),
+  "savedAt": zod.coerce.date()
+})).max(listLocalBusinessSavedLeadsResponseLeadsMax)
+})
+
+
+/**
+ * @summary Save a discovered business for staff review
+ */
+export const SaveLocalBusinessLeadBody = zod.object({
+  "business": zod.object({
+  "id": zod.string(),
+  "externalId": zod.string(),
+  "provider": zod.enum(['google_places', 'openstreetmap']),
+  "name": zod.string(),
+  "website": zod.string().url(),
+  "category": zod.string(),
+  "location": zod.string(),
+  "mapsUrl": zod.string().url().nullable(),
+  "osmUrl": zod.string().url().nullable()
+})
+})
+
+export const SaveLocalBusinessLeadResponse = zod.object({
+  "id": zod.string(),
+  "externalId": zod.string(),
+  "provider": zod.enum(['google_places', 'openstreetmap']),
+  "name": zod.string(),
+  "website": zod.string().url(),
+  "category": zod.string(),
+  "location": zod.string(),
+  "mapsUrl": zod.string().url().nullable(),
+  "osmUrl": zod.string().url().nullable(),
+  "savedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Check an explicitly authorized website with WhatCMS
  */
 export const auditLocalBusinessWebsiteBodyWebsiteMax = 2048;
 
 
 
 export const AuditLocalBusinessWebsiteBody = zod.object({
-  "website": zod.string().url().max(auditLocalBusinessWebsiteBodyWebsiteMax)
+  "website": zod.string().url().max(auditLocalBusinessWebsiteBodyWebsiteMax),
+  "authorizationConfirmed": zod.literal(true)
 })
 
 export const auditLocalBusinessWebsiteResponseTechnologiesItemMax = 100;
@@ -160,12 +268,15 @@ export const auditLocalBusinessWebsiteResponseMessageMax = 300;
 
 
 export const AuditLocalBusinessWebsiteResponse = zod.object({
+  "id": zod.string().uuid(),
+  "website": zod.string().url(),
   "status": zod.enum(['success', 'not_detected', 'unavailable', 'rate_limited']),
   "cms": zod.string().nullable(),
   "language": zod.string().nullable(),
   "technologies": zod.array(zod.string().max(auditLocalBusinessWebsiteResponseTechnologiesItemMax)).max(auditLocalBusinessWebsiteResponseTechnologiesMax),
   "isWordPressOpportunity": zod.boolean(),
-  "message": zod.string().max(auditLocalBusinessWebsiteResponseMessageMax).nullable()
+  "message": zod.string().max(auditLocalBusinessWebsiteResponseMessageMax).nullable(),
+  "createdAt": zod.coerce.date()
 })
 
 

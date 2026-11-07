@@ -9,4 +9,5 @@
 export interface LocalBusinessAuditInput {
   /** @maxLength 2048 */
   website: string;
+  authorizationConfirmed: true;
 }

@@ -155,29 +155,46 @@ export interface StaffMeetingResult {
 
 export interface LocalBusinessDiscoveryInput {
   /**
+     * @minLength 2
+     * @maxLength 200
+     */
+  searchLocation: string;
+  /**
      * @minimum 1
      * @maximum 25
      */
   radiusMiles: number;
 }
 
-export type LocalBusinessOpportunityElementType = typeof LocalBusinessOpportunityElementType[keyof typeof LocalBusinessOpportunityElementType];
+export type LocalBusinessOpportunityProvider = typeof LocalBusinessOpportunityProvider[keyof typeof LocalBusinessOpportunityProvider];
 
 
-export const LocalBusinessOpportunityElementType = {
-  node: 'node',
-  way: 'way',
-  relation: 'relation',
+export const LocalBusinessOpportunityProvider = {
+  google_places: 'google_places',
+  openstreetmap: 'openstreetmap',
 } as const;
 
 export interface LocalBusinessOpportunity {
   id: string;
+  externalId: string;
+  provider: LocalBusinessOpportunityProvider;
   name: string;
   website: string;
   category: string;
-  elementType: LocalBusinessOpportunityElementType;
-  osmUrl: string;
+  location: string;
+  /** @nullable */
+  mapsUrl: string | null;
+  /** @nullable */
+  osmUrl: string | null;
 }
+
+export type LocalBusinessDiscoveryResultSource = typeof LocalBusinessDiscoveryResultSource[keyof typeof LocalBusinessDiscoveryResultSource];
+
+
+export const LocalBusinessDiscoveryResultSource = {
+  google_places: 'google_places',
+  openstreetmap: 'openstreetmap',
+} as const;
 
 export interface LocalBusinessDiscoveryResult {
   /** @maxItems 50 */
@@ -189,13 +206,27 @@ export interface LocalBusinessDiscoveryResult {
      * @maximum 25
      */
   radiusMiles: number;
-  center: string;
+  searchLocation: string;
+  source: LocalBusinessDiscoveryResultSource;
+  /** @maxLength 300 */
+  providerNote: string;
+  googlePlacesConfigured: boolean;
   whatCmsConfigured: boolean;
+  activeSecurityTestsAvailable: false;
+}
+
+export interface LocalBusinessIntelligenceStatus {
+  defaultSearchLocation: string;
+  googlePlacesConfigured: boolean;
+  openStreetMapAvailable: true;
+  whatCmsConfigured: boolean;
+  activeSecurityTestsAvailable: false;
 }
 
 export interface LocalBusinessAuditInput {
   /** @maxLength 2048 */
   website: string;
+  authorizationConfirmed: true;
 }
 
 export type LocalBusinessAuditResultStatus = typeof LocalBusinessAuditResultStatus[keyof typeof LocalBusinessAuditResultStatus];
@@ -209,6 +240,8 @@ export const LocalBusinessAuditResultStatus = {
 } as const;
 
 export interface LocalBusinessAuditResult {
+  id: string;
+  website: string;
   status: LocalBusinessAuditResultStatus;
   /** @nullable */
   cms: string | null;
@@ -225,6 +258,44 @@ export interface LocalBusinessAuditResult {
      * @nullable
      */
   message: string | null;
+  createdAt: string;
+}
+
+export interface LocalBusinessAuditReportList {
+  /** @maxItems 100 */
+  reports: LocalBusinessAuditResult[];
+}
+
+export interface LocalBusinessSavedLeadInput {
+  business: LocalBusinessOpportunity;
+}
+
+export type LocalBusinessSavedLeadProvider = typeof LocalBusinessSavedLeadProvider[keyof typeof LocalBusinessSavedLeadProvider];
+
+
+export const LocalBusinessSavedLeadProvider = {
+  google_places: 'google_places',
+  openstreetmap: 'openstreetmap',
+} as const;
+
+export interface LocalBusinessSavedLead {
+  id: string;
+  externalId: string;
+  provider: LocalBusinessSavedLeadProvider;
+  name: string;
+  website: string;
+  category: string;
+  location: string;
+  /** @nullable */
+  mapsUrl: string | null;
+  /** @nullable */
+  osmUrl: string | null;
+  savedAt: string;
+}
+
+export interface LocalBusinessSavedLeadList {
+  /** @maxItems 500 */
+  leads: LocalBusinessSavedLead[];
 }
 
 export type CommunicationRecipientKind = typeof CommunicationRecipientKind[keyof typeof CommunicationRecipientKind];

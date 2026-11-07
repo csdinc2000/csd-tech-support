@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { formatDistanceToNowStrict } from "date-fns";
-import { Building, Link2, Mail, MessageSquare, PenSquare, Star } from "lucide-react";
+import { Building, Globe2, Link2, Mail, MessageSquare, PenSquare, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,14 +20,16 @@ import {
   type ContentIdea,
 } from "@/lib/marketing";
 import { CopyButton, MarketingCard, useBrandKit } from "./shared";
+import { WebsiteIntelligence } from "./website-intelligence";
 
-export type MarketingTool = "reviews" | "content" | "utm" | "brand";
+export type MarketingTool = "reviews" | "content" | "utm" | "brand" | "website";
 
 const TOOLS: { id: MarketingTool; label: string; icon: React.ComponentType<{ className?: string }>; hint: string }[] = [
   { id: "reviews", label: "Review requests", icon: Star, hint: "Ask recent customers for a review" },
   { id: "content", label: "Content studio", icon: PenSquare, hint: "Ready-to-post social copy" },
   { id: "utm", label: "Tracked links", icon: Link2, hint: "UTM links for every channel" },
   { id: "brand", label: "Brand kit", icon: Building, hint: "Details the tools fill in" },
+  { id: "website", label: "Website intelligence", icon: Globe2, hint: "Local business websites and passive technology review" },
 ];
 
 export function isMarketingTool(value: string | null): value is MarketingTool {
@@ -80,6 +82,7 @@ export function MarketingTools({
         {tool === "content" && <ContentStudio kit={kit} />}
         {tool === "utm" && <UtmBuilder kit={kit} />}
         {tool === "brand" && <BrandKitForm kit={kit} onChange={updateKit} />}
+        {tool === "website" && <WebsiteIntelligence />}
       </div>
     </div>
   );

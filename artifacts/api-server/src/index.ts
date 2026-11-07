@@ -72,6 +72,7 @@ import { applyCallForwardingStaffOutcomesMigration } from "./migrations/2026-10-
 import { applySharedInboxMigration } from "./migrations/2026-10-30-shared-inbox";
 import { applyReferralsMigration } from "./migrations/2026-10-30-referrals";
 import { applyOutboundCallOutcomesMigration } from "./migrations/2026-11-06-outbound-call-outcomes";
+import { applyLocalWebsiteIntelligenceMigration } from "./local-website-intelligence";
 
 const log = (message: string) => logger.info(message);
 
@@ -445,6 +446,11 @@ async function initStripe() {
     await applyOutboundCallOutcomesMigration();
   } catch (err: any) {
     logger.error({ error: err }, "Outbound call outcomes migration failed");
+  }
+  try {
+    await applyLocalWebsiteIntelligenceMigration();
+  } catch (err: any) {
+    logger.error({ error: err }, "Local website intelligence migration failed");
   }
   await initStripe();
   startCatalogReconciliationWorker();

@@ -193,6 +193,7 @@ import { registerBrowserVoiceRoutes } from "./browser-voice-routes";
 import { registerStaffMeetingRoutes } from "../staff-meetings";
 import { registerCommunicationEmailRoutes } from "../communication-email";
 import { registerStaffCalendarRoutes } from "../staff-calendar";
+import { registerLocalWebsiteIntelligenceRoutes } from "../local-website-intelligence";
 
 async function mirrorStaffSmsToForwardingPhones(input: {
   messageSid: string;
@@ -270,6 +271,7 @@ function validWarningHistoryDates(fromDate?: string, toDate?: string): boolean {
 }
 
 export async function registerRoutes(app: Express, options: RouteRegistrationOptions = {}): Promise<Server> {
+  registerLocalWebsiteIntelligenceRoutes(app);
   const googleContactsService = options.googleContactsService ?? defaultGoogleContactsService;
   const isTwilioConfigured = options.isTwilioConfigured ?? defaultIsTwilioConfigured;
   const sendSms = options.sendSms ?? defaultSendSms;

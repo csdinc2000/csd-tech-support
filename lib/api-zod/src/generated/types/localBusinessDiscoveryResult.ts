@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { LocalBusinessDiscoveryResultSource } from './localBusinessDiscoveryResultSource';
 import type { LocalBusinessOpportunity } from './localBusinessOpportunity';
 
 export interface LocalBusinessDiscoveryResult {
@@ -17,6 +18,11 @@ export interface LocalBusinessDiscoveryResult {
      * @maximum 25
      */
   radiusMiles: number;
-  center: string;
+  searchLocation: string;
+  source: LocalBusinessDiscoveryResultSource;
+  /** @maxLength 300 */
+  providerNote: string;
+  googlePlacesConfigured: boolean;
   whatCmsConfigured: boolean;
+  activeSecurityTestsAvailable: false;
 }
