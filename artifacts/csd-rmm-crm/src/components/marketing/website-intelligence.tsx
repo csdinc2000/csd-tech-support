@@ -250,9 +250,17 @@ export function WebsiteIntelligence() {
           testId="website-business-results"
         >
           {discovery && (
-            <p className="mb-3 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600" data-testid="website-provider-note">
-              {discovery.source === "google_places" ? "Google Places" : "OpenStreetMap"} · {discovery.providerNote}
-            </p>
+            <div className="mb-3 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600" data-testid="website-provider-note">
+              <p>{discovery.source === "google_places" ? "Google Places" : "OpenStreetMap"} · {discovery.providerNote}</p>
+              {discovery.source === "openstreetmap" && (
+                <p className="mt-1">
+                  Data ©{" "}
+                  <a className="underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+                    OpenStreetMap contributors
+                  </a>
+                </p>
+              )}
+            </div>
           )}
           <div className="mb-3 flex flex-wrap gap-1.5" aria-label="Filter results by technology">
             {([
