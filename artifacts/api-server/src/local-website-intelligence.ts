@@ -1,8 +1,18 @@
 import type { Express, Request, Response } from "express";
+import { randomUUID } from "node:crypto";
 import axios from "axios";
 import { z } from "zod/v4";
+import {
+  AuditLocalBusinessWebsiteBody,
+  AuditLocalBusinessWebsiteResponse,
+  DraftLocalBusinessProposalBody,
+  DraftLocalBusinessProposalResponse,
+  SaveLocalBusinessLeadBody,
+} from "@workspace/api-zod";
 import { pool } from "./db";
+import { getCsdApprovedCatalogService } from "./catalog";
 import { collectTechnologyNames, mapWhatCmsResponse, publicWebsite, validPublicWebsite } from "./local-website-intelligence-core";
+import { draftProposal } from "./website-intelligence";
 
 const GOOGLE_PLACES_URL = "https://places.googleapis.com/v1/places:searchText";
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
@@ -18,28 +28,26 @@ const discoveryInput = z.object({
   radiusMiles: z.number().int().min(1).max(25),
 }).strict();
 
-const businessSchema = z.object({
-  id: z.string().min(1).max(300),
-  externalId: z.string().min(1).max(300),
-  provider: z.enum(["google_places", "openstreetmap"]),
-  name: z.string().trim().min(1).max(200),
-  website: z.string().url().max(2048),
-  category: z.string().trim().max(200),
-  location: z.string().trim().max(500),
-  mapsUrl: z.string().url().nullable(),
-  osmUrl: z.string().url().nullable(),
-}).strict();
-
-const saveLeadInput = z.object({ business: businessSchema }).strict();
-const auditInput = z.object({
-  website: z.string().trim().url().max(2048),
-  authorizationConfirmed: z.literal(true),
-}).strict();
+const saveLeadInput = SaveLocalBusinessLeadBody;
+const auditInput = AuditLocalBusinessWebsiteBody;
+const proposalInput = DraftLocalBusinessProposalBody;
 
 type Coordinates = { lat: number; lon: number; label: string };
-type Business = z.infer<typeof businessSchema>;
+type Business = {
+  id: string;
+  externalId: string;
+  provider: "google_places" | "openstreetmap";
+  name: string;
+  website: string;
+  category: string;
+  location: string;
+  mapsUrl: string | null;
+  osmUrl: string | null;
+};
 type AuditResult = {
   id: string;
+  leadId: string;
+  leadName: string;
   website: string;
   status: "success" | "not_detected" | "unavailable" | "rate_limited";
   cms: string | null;
@@ -49,6 +57,7 @@ type AuditResult = {
   message: string | null;
   createdAt: string;
 };
+type ProposalResult = z.infer<typeof DraftLocalBusinessProposalResponse>;
 
 const geocodeCache = new Map<string, { value: Coordinates; expiresAt: number }>();
 const userLastAction = new Map<string, number>();
@@ -200,7 +209,11 @@ async function searchOpenStreetMap(radiusMiles: number, center: Coordinates): Pr
 );
 out center tags;`;
   const { data } = await axios.post(OVERPASS_URL, `data=${encodeURIComponent(query)}`, {
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+      "User-Agent": "CSD-WebsiteIntelligence/1.0 (support@computersystemsdepot.com)",
+    },
     timeout: 30_000,
     maxRedirects: 0,
   });
@@ -237,15 +250,34 @@ export async function applyLocalWebsiteIntelligenceMigration(): Promise<void> {
       maps_url TEXT,
       osm_url TEXT,
       saved_by TEXT NOT NULL,
+      verified_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (provider, external_id)
     );
 
+    ALTER TABLE local_business_saved_leads
+      ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+
     CREATE INDEX IF NOT EXISTS local_business_saved_leads_created_idx
       ON local_business_saved_leads (created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS local_business_discovery_results (
+      provider TEXT NOT NULL CHECK (provider IN ('google_places', 'openstreetmap')),
+      external_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      website TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT '',
+      location TEXT NOT NULL DEFAULT '',
+      maps_url TEXT,
+      osm_url TEXT,
+      searched_by TEXT NOT NULL,
+      checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (provider, external_id)
+    );
+
     CREATE TABLE IF NOT EXISTS local_website_audit_reports (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      lead_id UUID REFERENCES local_business_saved_leads(id) ON DELETE CASCADE,
       website TEXT NOT NULL,
       status TEXT NOT NULL CHECK (status IN ('success', 'not_detected', 'unavailable', 'rate_limited')),
       cms TEXT,
@@ -257,8 +289,14 @@ export async function applyLocalWebsiteIntelligenceMigration(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    ALTER TABLE local_website_audit_reports
+      ADD COLUMN IF NOT EXISTS lead_id UUID REFERENCES local_business_saved_leads(id) ON DELETE CASCADE;
+
     CREATE INDEX IF NOT EXISTS local_website_audit_reports_created_idx
       ON local_website_audit_reports (created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS local_website_audit_reports_lead_idx
+      ON local_website_audit_reports (lead_id, created_at DESC);
   `);
 }
 
@@ -314,6 +352,36 @@ export function registerLocalWebsiteIntelligenceRoutes(app: Express): void {
         source = "openstreetmap";
         businesses = await searchOpenStreetMap(radiusMiles, center);
       }
+      await pool.query(
+        `DELETE FROM local_business_discovery_results
+          WHERE checked_at < NOW() - INTERVAL '7 days'`,
+      );
+      if (businesses.length > 0) {
+        const rows = businesses.map((business) => ({
+          provider: business.provider,
+          external_id: business.externalId,
+          name: business.name,
+          website: business.website,
+          category: business.category,
+          location: business.location,
+          maps_url: business.mapsUrl,
+          osm_url: business.osmUrl,
+        }));
+        await pool.query(
+          `INSERT INTO local_business_discovery_results
+             (provider, external_id, name, website, category, location, maps_url, osm_url, searched_by, checked_at)
+           SELECT provider, external_id, name, website, category, location, maps_url, osm_url, $2, NOW()
+             FROM jsonb_to_recordset($1::jsonb) AS item(
+               provider text, external_id text, name text, website text, category text,
+               location text, maps_url text, osm_url text
+             )
+           ON CONFLICT (provider, external_id) DO UPDATE SET
+             name = EXCLUDED.name, website = EXCLUDED.website, category = EXCLUDED.category,
+             location = EXCLUDED.location, maps_url = EXCLUDED.maps_url, osm_url = EXCLUDED.osm_url,
+             searched_by = EXCLUDED.searched_by, checked_at = NOW()`,
+          [JSON.stringify(rows), userId],
+        );
+      }
       res.json({
         businesses,
         total: businesses.length,
@@ -335,16 +403,28 @@ export function registerLocalWebsiteIntelligenceRoutes(app: Express): void {
     if (!userId) return;
     const parsed = auditInput.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ message: "Confirm you are authorized to request a passive technology lookup and enter a valid HTTPS website." });
+      res.status(400).json({ message: "Select a saved business lead and confirm you are authorized to request a passive technology lookup." });
       return;
     }
     if (!allowUserAction(`audit:${userId}`, 15_000)) {
       res.status(429).json({ message: "Please wait before checking another website." });
       return;
     }
-    const website = validPublicWebsite(parsed.data.website, true);
+    const leadResult = await pool.query(
+      `SELECT id, name, website
+         FROM local_business_saved_leads
+        WHERE id = $1 AND verified_at IS NOT NULL
+        LIMIT 1`,
+      [parsed.data.leadId],
+    );
+    const lead = leadResult.rows[0];
+    if (!lead) {
+      res.status(404).json({ message: "Save this discovered business as a prospect before requesting a technology report." });
+      return;
+    }
+    const website = validPublicWebsite(lead.website, true);
     if (!website) {
-      res.status(400).json({ message: "Use a public HTTPS website without a URL query, fragment, or credentials." });
+      res.status(400).json({ message: "This lead does not have a valid public HTTPS website for a passive technology lookup." });
       return;
     }
     const apiKey = process.env.WHATCMS_API_KEY?.trim();
@@ -360,12 +440,34 @@ export function registerLocalWebsiteIntelligenceRoutes(app: Express): void {
         maxRedirects: 0,
       });
       const mapped = mapWhatCmsResponse(response.data);
+      if (mapped.status === "rate_limited") {
+        res.status(429).json({ message: mapped.message });
+        return;
+      }
+      if (mapped.status === "unavailable") {
+        res.status(502).json({ message: mapped.message });
+        return;
+      }
+      const hasEvidence = Boolean(mapped.cms || mapped.language || mapped.technologies.length > 0);
+      if (!hasEvidence) {
+        res.json({
+          id: randomUUID(),
+          leadId: lead.id,
+          leadName: lead.name,
+          website: website.toString(),
+          ...mapped,
+          message: mapped.message || "The provider returned no supporting technology evidence; no report was saved.",
+          createdAt: new Date().toISOString(),
+        } satisfies AuditResult);
+        return;
+      }
       const result = await pool.query(
         `INSERT INTO local_website_audit_reports
-          (website, status, cms, language, technologies, is_wordpress_opportunity, message, created_by)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+          (lead_id, website, status, cms, language, technologies, is_wordpress_opportunity, message, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
          RETURNING id, website, status, cms, language, technologies, is_wordpress_opportunity, message, created_at`,
         [
+          lead.id,
           website.toString(),
           mapped.status,
           mapped.cms,
@@ -377,8 +479,10 @@ export function registerLocalWebsiteIntelligenceRoutes(app: Express): void {
         ],
       );
       const row = result.rows[0];
-      res.json({
+      res.json(AuditLocalBusinessWebsiteResponse.parse({
         id: row.id,
+        leadId: lead.id,
+        leadName: lead.name,
         website: row.website,
         status: row.status,
         cms: row.cms,
@@ -387,26 +491,36 @@ export function registerLocalWebsiteIntelligenceRoutes(app: Express): void {
         isWordPressOpportunity: row.is_wordpress_opportunity,
         message: row.message,
         createdAt: new Date(row.created_at).toISOString(),
-      } satisfies AuditResult);
+      }));
     } catch (error: any) {
       const status = Number(error?.response?.status);
       if (status === 429) {
         res.status(429).json({ message: "WhatCMS request limit reached. Please try again later." });
         return;
       }
+      req.log.warn({ errorName: error instanceof Error ? error.name : "unknown" }, "Passive technology lookup failed");
       res.status(502).json({ message: "WhatCMS could not complete the passive website check." });
     }
   });
 
-  app.get("/api/crm/local-opportunities/reports", async (_req, res) => {
+  app.get("/api/crm/local-opportunities/reports", async (req, res) => {
+    if (!requireUserId(req, res)) return;
     try {
       const result = await pool.query(
-        `SELECT id, website, status, cms, language, technologies, is_wordpress_opportunity, message, created_at
-         FROM local_website_audit_reports ORDER BY created_at DESC LIMIT 100`,
+        `SELECT report.id, report.lead_id, lead.name AS lead_name, report.website, report.status,
+                report.cms, report.language, report.technologies, report.is_wordpress_opportunity,
+                report.message, report.created_at
+           FROM local_website_audit_reports report
+           JOIN local_business_saved_leads lead ON lead.id = report.lead_id
+          WHERE report.lead_id IS NOT NULL
+            AND (report.cms IS NOT NULL OR report.language IS NOT NULL OR jsonb_array_length(report.technologies) > 0)
+          ORDER BY report.created_at DESC LIMIT 100`,
       );
       res.json({
         reports: result.rows.map((row: any) => ({
           id: row.id,
+          leadId: row.lead_id,
+          leadName: row.lead_name,
           website: row.website,
           status: row.status,
           cms: row.cms,
@@ -422,15 +536,18 @@ export function registerLocalWebsiteIntelligenceRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/crm/local-opportunities/leads", async (_req, res) => {
+  app.get("/api/crm/local-opportunities/leads", async (req, res) => {
+    if (!requireUserId(req, res)) return;
     try {
       const result = await pool.query(
         `SELECT id, provider, external_id, name, website, category, location, maps_url, osm_url, created_at
-         FROM local_business_saved_leads ORDER BY created_at DESC LIMIT 500`,
+         FROM local_business_saved_leads
+        WHERE verified_at IS NOT NULL
+        ORDER BY created_at DESC LIMIT 500`,
       );
       res.json({
         leads: result.rows.map((row: any) => ({
-          id: `${row.provider}:${row.external_id}`,
+          id: row.id,
           externalId: row.external_id,
           provider: row.provider,
           name: row.name,
@@ -455,26 +572,39 @@ export function registerLocalWebsiteIntelligenceRoutes(app: Express): void {
       res.status(400).json({ message: "Select a valid discovered business to save." });
       return;
     }
-    const business = parsed.data.business;
-    const website = publicWebsite(business.website);
-    if (!website) {
-      res.status(400).json({ message: "The business website is not a valid public address." });
-      return;
-    }
     try {
+      const verified = await pool.query(
+        `SELECT provider, external_id, name, website, category, location, maps_url, osm_url
+           FROM local_business_discovery_results
+          WHERE provider = $1 AND external_id = $2
+            AND checked_at > NOW() - INTERVAL '24 hours'
+          LIMIT 1`,
+        [parsed.data.business.provider, parsed.data.business.externalId],
+      );
+      const business = verified.rows[0];
+      if (!business) {
+        res.status(404).json({ message: "This listing is no longer verified. Search again to refresh provider results before saving it." });
+        return;
+      }
+      const website = publicWebsite(business.website);
+      if (!website) {
+        res.status(400).json({ message: "The discovered business website is not a valid public address." });
+        return;
+      }
       const result = await pool.query(
         `INSERT INTO local_business_saved_leads
-          (provider, external_id, name, website, category, location, maps_url, osm_url, saved_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          (provider, external_id, name, website, category, location, maps_url, osm_url, saved_by, verified_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
          ON CONFLICT (provider, external_id) DO UPDATE SET
            name = EXCLUDED.name, website = EXCLUDED.website, category = EXCLUDED.category,
-           location = EXCLUDED.location, maps_url = EXCLUDED.maps_url, osm_url = EXCLUDED.osm_url
-         RETURNING provider, external_id, name, website, category, location, maps_url, osm_url, created_at`,
-        [business.provider, business.externalId, business.name, website, business.category, business.location, business.mapsUrl, business.osmUrl, userId],
+            location = EXCLUDED.location, maps_url = EXCLUDED.maps_url, osm_url = EXCLUDED.osm_url,
+            saved_by = EXCLUDED.saved_by, verified_at = NOW()
+          RETURNING id, provider, external_id, name, website, category, location, maps_url, osm_url, created_at`,
+        [business.provider, business.external_id, business.name, website, business.category, business.location, business.maps_url, business.osm_url, userId],
       );
       const row = result.rows[0];
       res.json({
-        id: `${row.provider}:${row.external_id}`,
+        id: row.id,
         externalId: row.external_id,
         provider: row.provider,
         name: row.name,
@@ -487,6 +617,80 @@ export function registerLocalWebsiteIntelligenceRoutes(app: Express): void {
       });
     } catch {
       res.status(500).json({ message: "This business could not be saved." });
+    }
+  });
+
+  app.post("/api/crm/local-opportunities/proposals", async (req, res) => {
+    if (!requireUserId(req, res)) return;
+    const parsed = proposalInput.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ message: "Choose a saved business and an active CSD service catalog item." });
+      return;
+    }
+
+    try {
+      const leadResult = await pool.query(
+        `SELECT id, name, website
+           FROM local_business_saved_leads
+          WHERE id = $1 AND verified_at IS NOT NULL
+          LIMIT 1`,
+        [parsed.data.leadId],
+      );
+      const lead = leadResult.rows[0];
+      if (!lead) {
+        res.status(404).json({ message: "The saved business lead was not found." });
+        return;
+      }
+
+      const evidenceResult = await pool.query(
+        `SELECT cms, language, technologies
+           FROM local_website_audit_reports
+          WHERE lead_id = $1
+            AND (cms IS NOT NULL OR language IS NOT NULL OR jsonb_array_length(technologies) > 0)
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [lead.id],
+      );
+      const report = evidenceResult.rows[0];
+      if (!report) {
+        res.status(409).json({ message: "Run an authorized technology check with returned evidence before drafting a proposal." });
+        return;
+      }
+
+      const evidence = [
+        ...(report.cms ? [`CMS detected by WhatCMS: ${report.cms}`] : []),
+        ...(report.language ? [`Language detected by WhatCMS: ${report.language}`] : []),
+        ...(Array.isArray(report.technologies) ? report.technologies.slice(0, 8).map((technology: string) => `Technology detected by WhatCMS: ${technology}`) : []),
+      ].slice(0, 10);
+      if (evidence.length === 0) {
+        res.status(409).json({ message: "The technology report does not contain supporting evidence." });
+        return;
+      }
+
+      const service = await getCsdApprovedCatalogService(parsed.data.catalogItemId);
+      if (!service) {
+        res.status(409).json({ message: "Choose an active CSD service with an owner-managed catalog price." });
+        return;
+      }
+      const draft = draftProposal([{
+        label: service.name,
+        unitPriceCents: service.unitAmountCents,
+        quantity: 1,
+      }]);
+      res.json(DraftLocalBusinessProposalResponse.parse({
+        leadId: lead.id,
+        leadName: lead.name,
+        website: lead.website,
+        evidence,
+        serviceId: service.id,
+        serviceName: service.name,
+        unitAmountCents: service.unitAmountCents,
+        subtotalCents: draft.subtotalCents,
+        status: "draft_needs_review",
+      } satisfies ProposalResult));
+    } catch (error) {
+      req.log.warn({ errorName: error instanceof Error ? error.name : "unknown" }, "Website proposal draft could not be prepared");
+      res.status(500).json({ message: "The proposal draft could not be prepared." });
     }
   });
 }

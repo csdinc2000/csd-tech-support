@@ -11,6 +11,7 @@ import type {
   LocalBusinessDiscoveryResult,
   LocalBusinessIntelligenceStatus,
   LocalBusinessOpportunity,
+  LocalBusinessProposal,
   LocalBusinessSavedLead,
   LocalBusinessSavedLeadInput,
   LocalBusinessSavedLeadList,
@@ -21,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MarketingCard } from "./shared";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
+import { useStaffCatalog } from "@/hooks/use-catalog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +35,14 @@ function resultMessage(error: unknown): string {
 
 function isPhpReport(report: LocalBusinessAuditResult | undefined): boolean {
   return Boolean(report?.technologies.some((item) => /\bphp\b/i.test(item)) || /\bphp\b/i.test(report?.language ?? ""));
+}
+
+function reportHasEvidence(report: LocalBusinessAuditResult | undefined): boolean {
+  return Boolean(report && (report.cms || report.language || report.technologies.length > 0));
+}
+
+function formatCents(cents: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
 }
 
 function domainLabel(website: string): string {
@@ -53,6 +63,8 @@ export function WebsiteIntelligence() {
   const [discovery, setDiscovery] = useState<LocalBusinessDiscoveryResult | null>(null);
   const [authorizedWebsites, setAuthorizedWebsites] = useState<Set<string>>(new Set());
   const [lastAudit, setLastAudit] = useState<LocalBusinessAuditResult | null>(null);
+  const [lastProposal, setLastProposal] = useState<LocalBusinessProposal | null>(null);
+  const [proposalServiceByLead, setProposalServiceByLead] = useState<Record<string, string>>({});
 
   const statusQuery = useQuery<LocalBusinessIntelligenceStatus>({
     queryKey: ["/api/crm/local-opportunities/status"],
@@ -69,6 +81,7 @@ export function WebsiteIntelligence() {
     queryFn: getQueryFn({ on401: "throw" }),
     staleTime: 30_000,
   });
+  const catalogQuery = useStaffCatalog();
 
   const discover = useDiscoverLocalBusinessOpportunities({
     mutation: {
@@ -87,14 +100,19 @@ export function WebsiteIntelligence() {
         setView("reports");
         setAuthorizedWebsites((current) => new Set([...current].filter((website) => website !== result.website)));
         await queryClient.invalidateQueries({ queryKey: ["/api/crm/local-opportunities/reports"] });
-        toast({ title: "Passive website check complete" });
+        toast({
+          title: reportHasEvidence(result) ? "Evidence-backed report saved" : "No report saved",
+          description: reportHasEvidence(result) ? undefined : result.message ?? "The provider returned no supporting technology evidence.",
+        });
       },
       onError: (error) => toast({ title: "Website check failed", description: resultMessage(error), variant: "destructive" }),
     },
   });
   const saveLead = useMutation({
     mutationFn: async (business: LocalBusinessOpportunity): Promise<LocalBusinessSavedLead> => {
-      const payload: LocalBusinessSavedLeadInput = { business };
+      const payload: LocalBusinessSavedLeadInput = {
+        business: { provider: business.provider, externalId: business.externalId },
+      };
       const response = await apiRequest("POST", "/api/crm/local-opportunities/leads", payload);
       return response.json();
     },
@@ -104,9 +122,23 @@ export function WebsiteIntelligence() {
     },
     onError: (error) => toast({ title: "Could not save prospect", description: resultMessage(error), variant: "destructive" }),
   });
+  const proposal = useMutation({
+    mutationFn: async (input: { leadId: string; catalogItemId: string }): Promise<LocalBusinessProposal> => {
+      const response = await apiRequest("POST", "/api/crm/local-opportunities/proposals", input);
+      return response.json();
+    },
+    onSuccess: (result) => {
+      setLastProposal(result);
+      toast({ title: "Proposal draft prepared", description: "The draft is not sent or invoiced and still needs staff review." });
+    },
+    onError: (error) => toast({ title: "Could not draft proposal", description: resultMessage(error), variant: "destructive" }),
+  });
 
   const reports = reportsQuery.data?.reports ?? [];
   const savedLeads = leadsQuery.data?.leads ?? [];
+  const catalogServices = (catalogQuery.data?.items ?? []).filter(
+    (item) => item.active && item.kind === "service" && item.unitAmountCents > 0,
+  );
   const reportByWebsite = useMemo(
     () => new Map(reports.map((report) => [report.website, report])),
     [reports],
@@ -122,6 +154,10 @@ export function WebsiteIntelligence() {
   const wordpressCount = reports.filter((report) => report.isWordPressOpportunity).length;
   const phpCount = reports.filter(isPhpReport).length;
   const savedKeys = new Set(savedLeads.map((lead) => `${lead.provider}:${lead.externalId}`));
+  const savedLeadByKey = new Map(savedLeads.map((lead) => [`${lead.provider}:${lead.externalId}`, lead]));
+  const reportByLeadId = new Map(
+    reports.filter(reportHasEvidence).map((report) => [report.leadId, report]),
+  );
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -136,10 +172,6 @@ export function WebsiteIntelligence() {
       else next.delete(website);
       return next;
     });
-  };
-
-  const checkWebsite = (website: string) => {
-    audit.mutate({ data: { website, authorizationConfirmed: true } });
   };
 
   const status = statusQuery.data;
@@ -287,7 +319,9 @@ export function WebsiteIntelligence() {
           <ul className="divide-y divide-gray-100">
             {filteredBusinesses.map((business) => {
               const report = reportByWebsite.get(business.website);
-              const saved = savedKeys.has(`${business.provider}:${business.externalId}`);
+              const businessKey = `${business.provider}:${business.externalId}`;
+              const savedLead = savedLeadByKey.get(businessKey);
+              const saved = savedKeys.has(businessKey);
               const authorized = authorizedWebsites.has(business.website);
               return (
                 <li key={business.id} className="py-4 first:pt-1 last:pb-1" data-testid={`website-business-${business.id}`}>
@@ -332,14 +366,17 @@ export function WebsiteIntelligence() {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={!authorized || !status?.whatCmsConfigured || audit.isPending}
-                      onClick={() => checkWebsite(business.website)}
+                      disabled={!authorized || !savedLead || !status?.whatCmsConfigured || audit.isPending}
+                      onClick={() => savedLead && audit.mutate({ data: { leadId: savedLead.id, authorizationConfirmed: true } })}
                       data-testid={`website-audit-${business.id}`}
                     >
                       <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
-                      {audit.isPending && audit.variables?.data.website === business.website ? "Checking…" : "Check technologies"}
+                      {audit.isPending && audit.variables?.data.leadId === savedLead?.id ? "Checking…" : "Check technologies"}
                     </Button>
                   </div>
+                  {!savedLead && (
+                    <p className="mt-2 text-xs text-gray-700">Save this provider-verified business before requesting a report.</p>
+                  )}
                 </li>
               );
             })}
@@ -351,7 +388,8 @@ export function WebsiteIntelligence() {
         <MarketingCard icon={ShieldCheck} title="Audit reports" description="Passive technology results from sites you confirmed you are authorized to assess." testId="website-audit-reports">
           {lastAudit && (
             <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm" data-testid="website-last-audit">
-              <p className="font-semibold text-emerald-900">{domainLabel(lastAudit.website)} · {lastAudit.status.replace("_", " ")}</p>
+                <p className="font-semibold text-emerald-900">{lastAudit.leadName} · {lastAudit.status.replace("_", " ")}</p>
+                <p className="mt-1 text-xs text-emerald-900">{domainLabel(lastAudit.website)}</p>
               <p className="mt-1 text-xs text-emerald-900">{lastAudit.message ?? ([lastAudit.cms, ...lastAudit.technologies].filter(Boolean).join(" · ") || "No technology details were returned.")}</p>
               {lastAudit.isWordPressOpportunity && <p className="mt-1 text-xs font-medium text-emerald-900">WordPress detected</p>}
             </div>
@@ -362,7 +400,7 @@ export function WebsiteIntelligence() {
             {reports.map((report) => (
               <li key={report.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between" data-testid={`website-report-${report.id}`}>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-gray-900">{domainLabel(report.website)}</p>
+                  <p className="truncate text-sm font-medium text-gray-900">{report.leadName} · {domainLabel(report.website)}</p>
                   <p className="text-xs text-gray-700">
                     {report.status.replace("_", " ")} · {[report.cms, ...report.technologies].filter(Boolean).join(", ") || report.message || "No technology detected"}
                   </p>
@@ -376,19 +414,65 @@ export function WebsiteIntelligence() {
 
       {view === "saved" && (
         <MarketingCard icon={Building2} title="Saved leads" description="Prospects are saved for review; they are not CRM customers or contacts." testId="website-saved-leads">
+          {lastProposal && (
+            <div className="mb-4 rounded-md border border-blue-300 bg-blue-50 p-3 text-sm text-blue-950" role="status" data-testid="website-proposal-draft">
+              <p className="font-semibold">Draft for {lastProposal.leadName}</p>
+              <p className="mt-1">{lastProposal.serviceName} · {formatCents(lastProposal.subtotalCents)}</p>
+              <p className="mt-1 text-xs">Evidence: {lastProposal.evidence.join(" · ")}</p>
+              <p className="mt-1 text-xs font-medium">Draft only. It has not been sent or invoiced and requires staff review.</p>
+            </div>
+          )}
           {leadsQuery.isLoading && <EmptyState>Loading saved prospects…</EmptyState>}
           {!leadsQuery.isLoading && savedLeads.length === 0 && <EmptyState>No leads saved.</EmptyState>}
           <ul className="divide-y divide-gray-100">
             {savedLeads.map((lead) => (
-              <li key={`${lead.provider}:${lead.externalId}`} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between" data-testid={`website-lead-${lead.externalId}`}>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-gray-900">{lead.name}</p>
-                  <p className="text-xs text-gray-700">{lead.category} · {domainLabel(lead.website)}</p>
-                  <p className="text-xs text-gray-700">Saved {new Date(lead.savedAt).toLocaleDateString()} · {lead.provider === "google_places" ? "Google Places" : "OpenStreetMap"}</p>
+              <li key={`${lead.provider}:${lead.externalId}`} className="space-y-3 py-4" data-testid={`website-lead-${lead.externalId}`}>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-900">{lead.name}</p>
+                    <p className="text-xs text-gray-700">{lead.category} · {domainLabel(lead.website)}</p>
+                    <p className="text-xs text-gray-700">Saved {new Date(lead.savedAt).toLocaleDateString()} · {lead.provider === "google_places" ? "Google Places" : "OpenStreetMap"}</p>
+                  </div>
+                  <a href={lead.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-blue-800 underline hover:text-blue-900">
+                    Open website <SquareArrowOutUpRight className="h-3 w-3" />
+                  </a>
                 </div>
-                <a href={lead.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-blue-800 underline hover:text-blue-900">
-                  Open website <SquareArrowOutUpRight className="h-3 w-3" />
-                </a>
+                <div className="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 sm:flex-row sm:items-center">
+                  <label className="min-w-0 flex-1 text-xs font-medium text-gray-800">
+                    CSD catalog service
+                    <select
+                      value={proposalServiceByLead[lead.id] ?? ""}
+                      onChange={(event) => setProposalServiceByLead((current) => ({ ...current, [lead.id]: event.target.value }))}
+                      className="mt-1 h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-csd-red"
+                      disabled={!reportByLeadId.has(lead.id) || catalogServices.length === 0}
+                      data-testid={`website-proposal-service-${lead.id}`}
+                    >
+                      <option value="">Choose an active service</option>
+                      {catalogServices.map((item) => (
+                        <option key={item.id} value={item.id}>{item.name} · {formatCents(item.unitAmountCents)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!reportByLeadId.has(lead.id) || !proposalServiceByLead[lead.id] || proposal.isPending || catalogQuery.isError}
+                    onClick={() => {
+                      const catalogItemId = proposalServiceByLead[lead.id];
+                      if (catalogItemId) proposal.mutate({ leadId: lead.id, catalogItemId });
+                    }}
+                    data-testid={`website-proposal-draft-${lead.id}`}
+                  >
+                    Draft proposal
+                  </Button>
+                </div>
+                {!reportByLeadId.has(lead.id) && (
+                  <p className="text-xs text-gray-700">Proposal drafts require a saved provider lead and an authorized technology check with returned evidence.</p>
+                )}
+                {catalogQuery.isError && <p className="text-xs font-medium text-red-800">The CSD catalog is unavailable; proposal pricing is disabled.</p>}
+                {!catalogQuery.isLoading && !catalogQuery.isError && catalogServices.length === 0 && (
+                  <p className="text-xs text-gray-700">No active CSD service prices are available. Add or activate a service in the CSD catalog first.</p>
+                )}
               </li>
             ))}
           </ul>

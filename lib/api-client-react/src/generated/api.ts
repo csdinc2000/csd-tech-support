@@ -44,6 +44,8 @@ import type {
   LocalBusinessDiscoveryInput,
   LocalBusinessDiscoveryResult,
   LocalBusinessIntelligenceStatus,
+  LocalBusinessProposal,
+  LocalBusinessProposalInput,
   LocalBusinessSavedLead,
   LocalBusinessSavedLeadInput,
   LocalBusinessSavedLeadList,
@@ -847,7 +849,7 @@ export const getAuditLocalBusinessWebsiteUrl = () => {
 }
 
 /**
- * @summary Check an explicitly authorized website with WhatCMS
+ * @summary Create an evidence-backed technology report for a saved business lead
  */
 export const auditLocalBusinessWebsite = async (localBusinessAuditInput: LocalBusinessAuditInput, options?: Parameters<typeof customFetch>[1]): Promise<LocalBusinessAuditResult> => {
 
@@ -896,7 +898,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type AuditLocalBusinessWebsiteMutationError = ErrorType<void>
 
     /**
- * @summary Check an explicitly authorized website with WhatCMS
+ * @summary Create an evidence-backed technology report for a saved business lead
  */
 export const useAuditLocalBusinessWebsite = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof auditLocalBusinessWebsite>>, TError,{data: BodyType<LocalBusinessAuditInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -907,6 +909,77 @@ export const useAuditLocalBusinessWebsite = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getAuditLocalBusinessWebsiteMutationOptions(options));
+    }
+
+export const getDraftLocalBusinessProposalUrl = () => {
+
+
+
+
+  return `/api/crm/local-opportunities/proposals`
+}
+
+/**
+ * @summary Draft a proposal using an evidence-backed lead and active CSD service price
+ */
+export const draftLocalBusinessProposal = async (localBusinessProposalInput: LocalBusinessProposalInput, options?: Parameters<typeof customFetch>[1]): Promise<LocalBusinessProposal> => {
+
+  return customFetch<LocalBusinessProposal>(getDraftLocalBusinessProposalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(localBusinessProposalInput)
+  }
+);}
+
+
+
+
+
+export const getDraftLocalBusinessProposalMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof draftLocalBusinessProposal>>, TError,{data: BodyType<LocalBusinessProposalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof draftLocalBusinessProposal>>, TError,{data: BodyType<LocalBusinessProposalInput>}, TContext> => {
+
+const mutationKey = ['draftLocalBusinessProposal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof draftLocalBusinessProposal>>, {data: BodyType<LocalBusinessProposalInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  draftLocalBusinessProposal(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DraftLocalBusinessProposalMutationResult = NonNullable<Awaited<ReturnType<typeof draftLocalBusinessProposal>>>
+    export type DraftLocalBusinessProposalMutationBody = BodyType<LocalBusinessProposalInput>
+    export type DraftLocalBusinessProposalMutationError = ErrorType<void>
+
+    /**
+ * @summary Draft a proposal using an evidence-backed lead and active CSD service price
+ */
+export const useDraftLocalBusinessProposal = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof draftLocalBusinessProposal>>, TError,{data: BodyType<LocalBusinessProposalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof draftLocalBusinessProposal>>,
+        TError,
+        {data: BodyType<LocalBusinessProposalInput>},
+        TContext
+      > => {
+      return useMutation(getDraftLocalBusinessProposalMutationOptions(options));
     }
 
 export const getHealthCheckUrl = () => {

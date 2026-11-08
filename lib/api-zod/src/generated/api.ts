@@ -168,6 +168,8 @@ export const DiscoverLocalBusinessOpportunitiesResponse = zod.object({
 /**
  * @summary List saved passive technology reports
  */
+export const listLocalBusinessAuditReportsResponseReportsItemLeadNameMax = 200;
+
 export const listLocalBusinessAuditReportsResponseReportsItemTechnologiesItemMax = 100;
 
 export const listLocalBusinessAuditReportsResponseReportsItemTechnologiesMax = 50;
@@ -181,6 +183,8 @@ export const listLocalBusinessAuditReportsResponseReportsMax = 100;
 export const ListLocalBusinessAuditReportsResponse = zod.object({
   "reports": zod.array(zod.object({
   "id": zod.string().uuid(),
+  "leadId": zod.string().uuid(),
+  "leadName": zod.string().max(listLocalBusinessAuditReportsResponseReportsItemLeadNameMax),
   "website": zod.string().url(),
   "status": zod.enum(['success', 'not_detected', 'unavailable', 'rate_limited']),
   "cms": zod.string().nullable(),
@@ -219,17 +223,14 @@ export const ListLocalBusinessSavedLeadsResponse = zod.object({
 /**
  * @summary Save a discovered business for staff review
  */
+export const saveLocalBusinessLeadBodyBusinessExternalIdMax = 300;
+
+
+
 export const SaveLocalBusinessLeadBody = zod.object({
   "business": zod.object({
-  "id": zod.string(),
-  "externalId": zod.string(),
   "provider": zod.enum(['google_places', 'openstreetmap']),
-  "name": zod.string(),
-  "website": zod.string().url(),
-  "category": zod.string(),
-  "location": zod.string(),
-  "mapsUrl": zod.string().url().nullable(),
-  "osmUrl": zod.string().url().nullable()
+  "externalId": zod.string().min(1).max(saveLocalBusinessLeadBodyBusinessExternalIdMax)
 })
 })
 
@@ -248,16 +249,14 @@ export const SaveLocalBusinessLeadResponse = zod.object({
 
 
 /**
- * @summary Check an explicitly authorized website with WhatCMS
+ * @summary Create an evidence-backed technology report for a saved business lead
  */
-export const auditLocalBusinessWebsiteBodyWebsiteMax = 2048;
-
-
-
 export const AuditLocalBusinessWebsiteBody = zod.object({
-  "website": zod.string().url().max(auditLocalBusinessWebsiteBodyWebsiteMax),
+  "leadId": zod.string().uuid(),
   "authorizationConfirmed": zod.literal(true)
 })
+
+export const auditLocalBusinessWebsiteResponseLeadNameMax = 200;
 
 export const auditLocalBusinessWebsiteResponseTechnologiesItemMax = 100;
 
@@ -269,6 +268,8 @@ export const auditLocalBusinessWebsiteResponseMessageMax = 300;
 
 export const AuditLocalBusinessWebsiteResponse = zod.object({
   "id": zod.string().uuid(),
+  "leadId": zod.string().uuid(),
+  "leadName": zod.string().max(auditLocalBusinessWebsiteResponseLeadNameMax),
   "website": zod.string().url(),
   "status": zod.enum(['success', 'not_detected', 'unavailable', 'rate_limited']),
   "cms": zod.string().nullable(),
@@ -277,6 +278,45 @@ export const AuditLocalBusinessWebsiteResponse = zod.object({
   "isWordPressOpportunity": zod.boolean(),
   "message": zod.string().max(auditLocalBusinessWebsiteResponseMessageMax).nullable(),
   "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Draft a proposal using an evidence-backed lead and active CSD service price
+ */
+export const draftLocalBusinessProposalBodyCatalogItemIdMax = 200;
+
+
+
+export const DraftLocalBusinessProposalBody = zod.object({
+  "leadId": zod.string().uuid(),
+  "catalogItemId": zod.string().min(1).max(draftLocalBusinessProposalBodyCatalogItemIdMax)
+})
+
+export const draftLocalBusinessProposalResponseLeadNameMax = 200;
+
+export const draftLocalBusinessProposalResponseEvidenceItemMax = 300;
+
+export const draftLocalBusinessProposalResponseEvidenceMax = 10;
+
+export const draftLocalBusinessProposalResponseServiceIdMax = 200;
+
+export const draftLocalBusinessProposalResponseServiceNameMax = 250;
+
+
+
+
+
+export const DraftLocalBusinessProposalResponse = zod.object({
+  "leadId": zod.string().uuid(),
+  "leadName": zod.string().max(draftLocalBusinessProposalResponseLeadNameMax),
+  "website": zod.string().url(),
+  "evidence": zod.array(zod.string().max(draftLocalBusinessProposalResponseEvidenceItemMax)).min(1).max(draftLocalBusinessProposalResponseEvidenceMax),
+  "serviceId": zod.string().max(draftLocalBusinessProposalResponseServiceIdMax),
+  "serviceName": zod.string().max(draftLocalBusinessProposalResponseServiceNameMax),
+  "unitAmountCents": zod.number().int().min(1),
+  "subtotalCents": zod.number().int().min(1),
+  "status": zod.enum(['draft_needs_review'])
 })
 
 

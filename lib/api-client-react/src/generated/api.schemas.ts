@@ -224,8 +224,7 @@ export interface LocalBusinessIntelligenceStatus {
 }
 
 export interface LocalBusinessAuditInput {
-  /** @maxLength 2048 */
-  website: string;
+  leadId: string;
   authorizationConfirmed: true;
 }
 
@@ -241,6 +240,9 @@ export const LocalBusinessAuditResultStatus = {
 
 export interface LocalBusinessAuditResult {
   id: string;
+  leadId: string;
+  /** @maxLength 200 */
+  leadName: string;
   website: string;
   status: LocalBusinessAuditResultStatus;
   /** @nullable */
@@ -266,8 +268,25 @@ export interface LocalBusinessAuditReportList {
   reports: LocalBusinessAuditResult[];
 }
 
+export type LocalBusinessReferenceProvider = typeof LocalBusinessReferenceProvider[keyof typeof LocalBusinessReferenceProvider];
+
+
+export const LocalBusinessReferenceProvider = {
+  google_places: 'google_places',
+  openstreetmap: 'openstreetmap',
+} as const;
+
+export interface LocalBusinessReference {
+  provider: LocalBusinessReferenceProvider;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  externalId: string;
+}
+
 export interface LocalBusinessSavedLeadInput {
-  business: LocalBusinessOpportunity;
+  business: LocalBusinessReference;
 }
 
 export type LocalBusinessSavedLeadProvider = typeof LocalBusinessSavedLeadProvider[keyof typeof LocalBusinessSavedLeadProvider];
@@ -296,6 +315,44 @@ export interface LocalBusinessSavedLead {
 export interface LocalBusinessSavedLeadList {
   /** @maxItems 500 */
   leads: LocalBusinessSavedLead[];
+}
+
+export interface LocalBusinessProposalInput {
+  leadId: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  catalogItemId: string;
+}
+
+export type LocalBusinessProposalStatus = typeof LocalBusinessProposalStatus[keyof typeof LocalBusinessProposalStatus];
+
+
+export const LocalBusinessProposalStatus = {
+  draft_needs_review: 'draft_needs_review',
+} as const;
+
+export interface LocalBusinessProposal {
+  leadId: string;
+  /** @maxLength 200 */
+  leadName: string;
+  website: string;
+  /**
+     * @minItems 1
+     * @maxItems 10
+     * @items.maxLength 300
+     */
+  evidence: string[];
+  /** @maxLength 200 */
+  serviceId: string;
+  /** @maxLength 250 */
+  serviceName: string;
+  /** @minimum 1 */
+  unitAmountCents: number;
+  /** @minimum 1 */
+  subtotalCents: number;
+  status: LocalBusinessProposalStatus;
 }
 
 export type CommunicationRecipientKind = typeof CommunicationRecipientKind[keyof typeof CommunicationRecipientKind];

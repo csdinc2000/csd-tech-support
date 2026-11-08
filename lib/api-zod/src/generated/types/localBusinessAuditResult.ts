@@ -9,6 +9,9 @@ import type { LocalBusinessAuditResultStatus } from './localBusinessAuditResultS
 
 export interface LocalBusinessAuditResult {
   id: string;
+  leadId: string;
+  /** @maxLength 200 */
+  leadName: string;
   website: string;
   status: LocalBusinessAuditResultStatus;
   /** @nullable */

@@ -178,7 +178,7 @@ paths:
   /crm/local-opportunities/audit:
     post:
       operationId: auditLocalBusinessWebsite
-      summary: Check an explicitly authorized website with WhatCMS
+      summary: Create an evidence-backed technology report for a saved business lead
       requestBody:
         required: true
         content:
@@ -193,7 +193,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/LocalBusinessAuditResult"
         "400":
-          description: Invalid public website URL
+          description: Invalid saved lead reference
+        "404":
+          description: The saved business lead was not found
         "403":
           description: Website authorization confirmation is required
         "429":
@@ -202,6 +204,29 @@ paths:
           description: WhatCMS could not complete the check
         "503":
           description: WhatCMS API key is not configured
+  /crm/local-opportunities/proposals:
+    post:
+      operationId: draftLocalBusinessProposal
+      summary: Draft a proposal using an evidence-backed lead and active CSD service price
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalBusinessProposalInput"
+      responses:
+        "200":
+          description: Proposal draft requiring human review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalBusinessProposal"
+        "400":
+          description: Invalid lead or catalog item
+        "404":
+          description: Saved lead was not found
+        "409":
+          description: Required evidence or active CSD service price is unavailable
   /healthz:
     get:
       operationId: healthCheck
@@ -807,16 +832,18 @@ components:
     LocalBusinessAuditInput:
       type: object
       additionalProperties: false
-      required: [website, authorizationConfirmed]
+      required: [leadId, authorizationConfirmed]
       properties:
-        website: { type: string, format: uri, maxLength: 2048 }
+        leadId: { type: string, format: uuid }
         authorizationConfirmed: { type: boolean, const: true }
     LocalBusinessAuditResult:
       type: object
       additionalProperties: false
-      required: [id, website, status, cms, language, technologies, isWordPressOpportunity, message, createdAt]
+      required: [id, leadId, leadName, website, status, cms, language, technologies, isWordPressOpportunity, message, createdAt]
       properties:
         id: { type: string, format: uuid }
+        leadId: { type: string, format: uuid }
+        leadName: { type: string, maxLength: 200 }
         website: { type: string, format: uri }
         status: { type: string, enum: [success, not_detected, unavailable, rate_limited] }
         cms: { type: ["string", "null"] }
@@ -842,7 +869,14 @@ components:
       additionalProperties: false
       required: [business]
       properties:
-        business: { $ref: "#/components/schemas/LocalBusinessOpportunity" }
+        business: { $ref: "#/components/schemas/LocalBusinessReference" }
+    LocalBusinessReference:
+      type: object
+      additionalProperties: false
+      required: [provider, externalId]
+      properties:
+        provider: { type: string, enum: [google_places, openstreetmap] }
+        externalId: { type: string, minLength: 1, maxLength: 300 }
     LocalBusinessSavedLead:
       type: object
       additionalProperties: false
@@ -867,6 +901,31 @@ components:
           type: array
           maxItems: 500
           items: { $ref: "#/components/schemas/LocalBusinessSavedLead" }
+    LocalBusinessProposalInput:
+      type: object
+      additionalProperties: false
+      required: [leadId, catalogItemId]
+      properties:
+        leadId: { type: string, format: uuid }
+        catalogItemId: { type: string, minLength: 1, maxLength: 200 }
+    LocalBusinessProposal:
+      type: object
+      additionalProperties: false
+      required: [leadId, leadName, website, evidence, serviceId, serviceName, unitAmountCents, subtotalCents, status]
+      properties:
+        leadId: { type: string, format: uuid }
+        leadName: { type: string, maxLength: 200 }
+        website: { type: string, format: uri }
+        evidence:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: { type: string, maxLength: 300 }
+        serviceId: { type: string, maxLength: 200 }
+        serviceName: { type: string, maxLength: 250 }
+        unitAmountCents: { type: integer, minimum: 1 }
+        subtotalCents: { type: integer, minimum: 1 }
+        status: { type: string, enum: [draft_needs_review] }
     CommunicationRecipient:
       type: object
       additionalProperties: false

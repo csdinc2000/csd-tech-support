@@ -5,8 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { LocalBusinessOpportunity } from './localBusinessOpportunity';
+import type { LocalBusinessReference } from './localBusinessReference';
 
 export interface LocalBusinessSavedLeadInput {
-  business: LocalBusinessOpportunity;
+  business: LocalBusinessReference;
 }

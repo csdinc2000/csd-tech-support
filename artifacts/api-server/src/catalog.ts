@@ -110,6 +110,16 @@ async function activeCatalogItem(stripe: any, productId: string): Promise<Catalo
   return item?.active && item.published ? item : null;
 }
 
+/** Server-authoritative price source for staff proposal drafts. */
+export async function getCsdApprovedCatalogService(productId: string): Promise<Pick<CatalogItem, "id" | "name" | "unitAmountCents"> | null> {
+  const stripe = await getUncachableStripeClient();
+  const item = await getCatalogItem(stripe, productId);
+  if (!item?.active || item.kind !== "service" || !Number.isSafeInteger(item.unitAmountCents) || item.unitAmountCents < 1) {
+    return null;
+  }
+  return { id: item.id, name: item.name, unitAmountCents: item.unitAmountCents };
+}
+
 function sendRouteError(res: Response, error: unknown, message: string): void {
   logger.warn({ error }, message);
   res.status(500).json({ error: message });

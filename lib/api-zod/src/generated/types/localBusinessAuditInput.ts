@@ -7,7 +7,6 @@
  */
 
 export interface LocalBusinessAuditInput {
-  /** @maxLength 2048 */
-  website: string;
+  leadId: string;
   authorizationConfirmed: true;
 }

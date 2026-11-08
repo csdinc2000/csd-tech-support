@@ -27,4 +27,5 @@ test("proposal remains a draft with explicit prices only", () => {
 test("rejects arbitrary URLs and invalid quote values", () => {
   assert.throws(() => assessWebsite({ domain: "http://127.0.0.1", technologies: [] }));
   assert.throws(() => draftProposal([{ label: "Bad price", unitPriceCents: -1, quantity: 1 }]));
+  assert.throws(() => draftProposal([]));
 });

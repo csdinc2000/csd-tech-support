@@ -61,6 +61,7 @@ export function assessWebsite(prospect: WebsiteProspect) {
 export type ProposalLine = { label: string; unitPriceCents: number; quantity: number };
 /** Only accepts pricing explicitly provided from the CSD-approved catalog. */
 export function draftProposal(lines: ProposalLine[]) {
+  if (lines.length === 0) throw new Error("A proposal needs at least one catalog item");
   const items = lines.map(line => {
     if (!line.label.trim() || !Number.isSafeInteger(line.unitPriceCents) || line.unitPriceCents < 0 || !Number.isSafeInteger(line.quantity) || line.quantity < 1) throw new Error("Invalid proposal line");
     const totalCents = line.unitPriceCents * line.quantity;
