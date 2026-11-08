@@ -10,6 +10,7 @@ import { apiRequest } from "@/lib/queryClient";
 import {
   describeRing,
   isDirectChannel,
+  pttRoleLabel,
   PTT_JOIN_EVENT,
   pttCallPath,
   ringSecondsLeft,
@@ -198,6 +199,7 @@ export function PttRingAlertsSession({ userId, allowed }: { userId: string | nul
             {describeRing(ring)}
           </p>
           <h2 id="ptt-ring-title" className="text-xl font-semibold" data-testid="ptt-ring-caller">{ring.callerName}</h2>
+          <p className="text-xs font-medium text-zinc-500" data-testid="ptt-ring-caller-role">{pttRoleLabel(ring.callerRole)}</p>
           <p id="ptt-ring-description" className="text-sm text-zinc-400">
             {direct
               ? "wants to talk with you on PTT. Answer to open a private call."

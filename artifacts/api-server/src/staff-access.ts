@@ -667,7 +667,12 @@ export function registerStaffAccessRoutes(
           ],
         );
         await client.query("COMMIT");
-        if (approvalStatus !== "approved" || !featureMap(role, approvalStatus, permissions).communications) {
+        const pttAccessChanged =
+          previousAccess.role !== row.role ||
+          previousAccess.approval_status !== row.approval_status ||
+          JSON.stringify(previousAccess.feature_permissions ?? {}) !==
+            JSON.stringify(row.feature_permissions ?? {});
+        if (pttAccessChanged) {
           const { revokePttUserSessions } = await import("./ptt");
           revokePttUserSessions(row.user_id);
         }

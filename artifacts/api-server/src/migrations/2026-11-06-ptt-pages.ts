@@ -13,12 +13,14 @@ export async function applyPttPagesMigration(): Promise<void> {
       caller_name TEXT NOT NULL,
       target_user_id VARCHAR NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
       channel_id TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'ringing'
-        CHECK (status IN ('ringing', 'answered', 'declined', 'cancelled')),
+      status TEXT NOT NULL DEFAULT 'ringing',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       expires_at TIMESTAMPTZ NOT NULL,
       responded_at TIMESTAMPTZ
     );
+    ALTER TABLE ptt_pages DROP CONSTRAINT IF EXISTS ptt_pages_status_check;
+    ALTER TABLE ptt_pages ADD CONSTRAINT ptt_pages_status_check
+      CHECK (status IN ('ringing', 'answered', 'declined', 'cancelled', 'unavailable'));
     CREATE INDEX IF NOT EXISTS ptt_pages_target_ringing_idx
       ON ptt_pages (target_user_id, expires_at) WHERE status = 'ringing';
     CREATE INDEX IF NOT EXISTS ptt_pages_group_idx ON ptt_pages (group_id);

@@ -5,25 +5,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
-import { isDirectChannel, RING_STATUS_LABEL, type PttRosterEntry, type RingGroup, type RingStatus } from "@/lib/ptt-ring";
-
-const ROLE_LABELS: Record<string, string> = {
-  owner: "Owner",
-  administrator: "Administrator",
-  field_technician: "Technician",
-  software_developer: "Developer",
-  accounting: "Accounting",
-  it_manager: "Manager",
-  legal_team: "Legal",
-  secretary: "Front desk",
-};
+import {
+  isDirectChannel,
+  pttRoleLabel,
+  RING_STATUS_LABEL,
+  type PttRosterEntry,
+  type PttRosterResponse,
+  type RingGroup,
+  type RingStatus,
+} from "@/lib/ptt-ring";
 
 const STATUS_STYLES: Record<RingStatus, string> = {
   ringing: "text-amber-300",
   answered: "text-emerald-400",
+  connected: "text-emerald-300",
   declined: "text-red-400",
   cancelled: "text-zinc-500",
   missed: "text-zinc-400",
+  unavailable: "text-zinc-500",
 };
 
 type Props = {
@@ -49,20 +48,33 @@ function errorMessage(error: unknown, fallback: string): string {
 export function PttRingPanel({ currentChannelId, channels, onJoinCall }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [group, setGroup] = useState<RingGroup | null>(null);
+  const [roleChoice, setRoleChoice] = useState("all");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
-  const roster = useQuery<{ staff: PttRosterEntry[]; ringSeconds: number }>({
+  const roster = useQuery<PttRosterResponse>({
     queryKey: ["/api/ptt/roster"],
     queryFn: async ({ signal }) => (await apiRequest("GET", "/api/ptt/roster", undefined, { signal })).json(),
     refetchInterval: 10_000,
     staleTime: 0,
   });
   const staff = roster.data?.staff ?? [];
+  const canBroadcast = roster.data?.canBroadcast === true;
+  const visibleStaff = staff.filter((entry) => {
+    if (!canBroadcast && entry.role !== "field_technician") return false;
+    return roleChoice === "all" || entry.role === roleChoice;
+  });
+  const roleOptions = [...new Set(staff.map((entry) => entry.role))].sort((a, b) => pttRoleLabel(a).localeCompare(pttRoleLabel(b)));
 
   const anyRinging = group?.pages.some((page) => page.status === "ringing") ?? false;
+  const shouldPollStatus = group?.pages.some((page) =>
+    page.status === "ringing" ||
+    page.status === "answered" ||
+    page.status === "connected" ||
+    (page.status === "unavailable" && new Date(group.expiresAt).getTime() > Date.now()),
+  ) ?? false;
   useEffect(() => {
-    if (!group || !anyRinging) return;
+    if (!group || !shouldPollStatus) return;
     let cancelled = false;
     const timer = window.setInterval(async () => {
       try {
@@ -73,7 +85,7 @@ export function PttRingPanel({ currentChannelId, channels, onJoinCall }: Props) 
       }
     }, 2000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [group?.groupId, anyRinging]);
+  }, [group?.groupId, shouldPollStatus]);
 
   // Drop selections for people who are no longer on the roster.
   useEffect(() => {
@@ -86,9 +98,12 @@ export function PttRingPanel({ currentChannelId, channels, onJoinCall }: Props) 
 
   const groupChannel = isDirectChannel(currentChannelId) ? "dispatch" : currentChannelId;
   const groupChannelName = channels.find((channel) => channel.id === groupChannel)?.name ?? "Dispatch";
-  const onlineCount = useMemo(() => staff.filter((entry) => entry.online).length, [staff]);
+  const onlineCount = useMemo(() => visibleStaff.filter((entry) => entry.online).length, [visibleStaff]);
 
-  const ring = async (body: { targetUserIds?: string[]; everyone?: boolean; channelId?: string }, label?: string) => {
+  const ring = async (
+    body: { targetUserIds?: string[]; everyone?: boolean; channelId?: string; targetRole?: string },
+    label?: string,
+  ) => {
     setSending(true);
     setError("");
     try {
@@ -110,6 +125,12 @@ export function PttRingPanel({ currentChannelId, channels, onJoinCall }: Props) 
     void ring({ targetUserIds: [...selected] }, label);
   };
   const ringEveryone = () => void ring({ everyone: true, channelId: groupChannel });
+  const ringRole = () => {
+    void ring(
+      { targetRole: roleChoice === "all" ? "all" : roleChoice },
+      roleChoice === "all" ? "All approved staff" : `${pttRoleLabel(roleChoice)} group`,
+    );
+  };
 
   const cancel = async () => {
     if (!group) return;
@@ -121,9 +142,12 @@ export function PttRingPanel({ currentChannelId, channels, onJoinCall }: Props) 
   };
 
   const toggle = (id: string) => setSelected((current) => {
-    const next = new Set(current);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
+    if (current.has(id)) {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    }
+    return canBroadcast ? new Set([...current, id]) : new Set([id]);
   });
 
   return (
@@ -133,16 +157,34 @@ export function PttRingPanel({ currentChannelId, channels, onJoinCall }: Props) 
           <BellRing className="h-4 w-4 text-zinc-500" />
           Ring Staff
         </h2>
-        <Badge variant="outline" className="border-zinc-700 bg-zinc-800 text-zinc-300">{onlineCount}/{staff.length} online</Badge>
+        <Badge variant="outline" className="border-zinc-700 bg-zinc-800 text-zinc-300">{onlineCount}/{visibleStaff.length} available</Badge>
       </div>
 
       <div className="max-h-[320px] overflow-y-auto p-2 space-y-1">
         {roster.isPending && <p className="p-3 text-xs text-zinc-500">Loading staff…</p>}
         {roster.isError && <p className="p-3 text-xs text-red-400">Unable to load staff with PTT access.</p>}
-        {!roster.isPending && !roster.isError && staff.length === 0 && (
-          <p className="p-3 text-xs text-zinc-500">Nobody else has PTT access yet. Give staff the Communications feature to ring them.</p>
+        {!roster.isPending && !roster.isError && visibleStaff.length === 0 && (
+          <p className="p-3 text-xs text-zinc-500">
+            {roleChoice === "all" && !canBroadcast
+              ? "No approved technicians are available to call."
+              : "Nobody in this role currently has PTT access."}
+          </p>
         )}
-        {staff.map((entry) => {
+        {canBroadcast && roleOptions.length > 0 && (
+          <label className="block px-2 pb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+            Filter by role
+            <select
+              value={roleChoice}
+              onChange={(event) => setRoleChoice(event.target.value)}
+              className="mt-1 h-9 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs font-medium normal-case tracking-normal text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+              data-testid="ptt-role-filter"
+            >
+              <option value="all">All approved roles</option>
+              {roleOptions.map((role) => <option key={role} value={role}>{pttRoleLabel(role)}</option>)}
+            </select>
+          </label>
+        )}
+        {visibleStaff.map((entry) => {
           const checked = selected.has(entry.id);
           const presence = entry.onPtt ? "On PTT" : entry.online ? "App open" : "Offline";
           return (
@@ -171,7 +213,7 @@ export function PttRingPanel({ currentChannelId, channels, onJoinCall }: Props) 
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-zinc-200">{entry.name}</p>
-                <p className="truncate text-[11px] text-zinc-500">{ROLE_LABELS[entry.role] ?? entry.role} · {presence}</p>
+                <p className="truncate text-[11px] text-zinc-500">{pttRoleLabel(entry.role)} · {presence}</p>
               </div>
               <Button
                 type="button"
@@ -194,23 +236,39 @@ export function PttRingPanel({ currentChannelId, channels, onJoinCall }: Props) 
         <Button
           type="button"
           className="w-full bg-orange-600 text-white hover:bg-orange-500"
-          disabled={sending || selected.size === 0}
+          disabled={sending || selected.size === 0 || (!canBroadcast && selected.size > 1)}
           onClick={ringSelected}
           data-testid="ptt-ring-selected"
         >
           {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PhoneCall className="mr-2 h-4 w-4" />}
-          Ring selected{selected.size ? ` (${selected.size})` : ""} · private
+          {canBroadcast ? "Call selected" : "Call technician"}
+          {selected.size ? ` (${selected.size})` : ""} · private
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
-          disabled={sending || staff.length === 0}
-          onClick={ringEveryone}
-          data-testid="ptt-ring-everyone"
-        >
-          <Users className="mr-2 h-4 w-4" /> Ring everyone · {groupChannelName}
-        </Button>
+        {canBroadcast && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+            disabled={sending || visibleStaff.length === 0}
+            onClick={ringRole}
+            data-testid="ptt-ring-role"
+          >
+            <Users className="mr-2 h-4 w-4" />
+            {roleChoice === "all" ? "Broadcast all staff" : `Call ${pttRoleLabel(roleChoice)} group`}
+          </Button>
+        )}
+        {canBroadcast && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+            disabled={sending || staff.length === 0}
+            onClick={ringEveryone}
+            data-testid="ptt-ring-everyone"
+          >
+            <Users className="mr-2 h-4 w-4" /> Ring talk group · {groupChannelName}
+          </Button>
+        )}
         {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
       </div>
 
@@ -224,14 +282,14 @@ export function PttRingPanel({ currentChannelId, channels, onJoinCall }: Props) 
               ? <Button type="button" size="sm" variant="ghost" className="h-7 text-red-400 hover:bg-red-500/10 hover:text-red-300" onClick={() => void cancel()} data-testid="ptt-ring-cancel">
                   <PhoneOff className="mr-1 h-3.5 w-3.5" /> Stop ringing
                 </Button>
-              : <Button type="button" size="icon" variant="ghost" className="h-7 w-7 text-zinc-500" onClick={() => setGroup(null)} aria-label="Clear ring status">
+              : <Button type="button" size="icon" variant="ghost" className="h-7 w-7 text-zinc-500" onClick={() => setGroup(null)} aria-label="Hide call status">
                   <X className="h-3.5 w-3.5" />
                 </Button>}
           </div>
           <ul className="space-y-1">
             {group.pages.map((page) => (
               <li key={page.id} className="flex items-center justify-between text-xs" data-testid={`ptt-ring-result-${page.targetUserId}`}>
-                <span className="truncate text-zinc-300">{page.name}</span>
+                <span className="truncate text-zinc-300">{page.name} · {pttRoleLabel(page.role)}</span>
                 <span className={cn("shrink-0 font-medium", STATUS_STYLES[page.status])}>{RING_STATUS_LABEL[page.status]}</span>
               </li>
             ))}

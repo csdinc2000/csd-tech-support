@@ -3,7 +3,7 @@ import type { Server } from "http";
 import { createHmac, randomUUID } from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
 import { getAuth } from "@clerk/express";
-import { canAccessFeature } from "./staff-access";
+import { canAccessFeature, getStaffAccess } from "./staff-access";
 import twilio from "twilio";
 import { requireAuth } from "./middlewares/clerkAuth";
 import { isAdminUser, isOwnerIdentity } from "./security";
@@ -54,6 +54,8 @@ export type PttUser = {
   id: string;
   name: string;
   email?: string;
+  /** Resolved from the approved staff profile; never accepted from a socket message. */
+  role?: string;
 };
 
 type PttClient = {
@@ -398,7 +400,14 @@ function knownChannel(value: unknown): value is ChannelId {
 export async function canJoinDirectChannel(userId: string, channelId: DirectChannelId): Promise<boolean> {
   const result = await pool.query(
     `SELECT 1 FROM ptt_pages
-     WHERE group_id = $1::uuid AND (caller_user_id = $2 OR target_user_id = $2)
+     WHERE group_id = $1::uuid AND (
+       caller_user_id = $2 OR EXISTS (
+         SELECT 1 FROM ptt_pages invitation
+         WHERE invitation.group_id = $1::uuid
+           AND invitation.target_user_id = $2
+           AND invitation.status = 'answered'
+       )
+     )
        AND created_at > NOW() - ($3 * INTERVAL '1 hour')
      LIMIT 1`,
     [channelId.slice("direct:".length), userId, DIRECT_CHANNEL_TTL_HOURS],
@@ -440,6 +449,7 @@ function publicUser(client: PttClient) {
     id: client.id,
     name: client.user.name,
     email: client.user.email,
+    role: client.user.role ?? "field_technician",
     isTalking: channelFloors.get(client.channelId!) === client.id,
   };
 }
@@ -637,11 +647,12 @@ export function registerPttRoutes(app: Express) {
     const network = await getPttSessionNetworkConfig();
     // Network configuration can take time to fetch; do not issue a token based
     // on approval captured before an owner-status change.
-    if (!(await canAccessFeature(req, "communications"))) {
+    const access = await getStaffAccess(req);
+    if (access.approvalStatus !== "approved" || !access.features.communications) {
       res.status(403).json({ error: "Approved communications access required" });
       return;
     }
-    const user = getSessionUser(req);
+    const user = { ...getSessionUser(req), role: access.role };
     const owner = isOwnerIdentity(req);
     const ownerAccess = owner ? await currentOwnerAccess(user.email) : null;
     if (ownerAccess && !ownerAccess.approved) {
@@ -679,6 +690,27 @@ export function revokePttUserSessions(userId: string, ownerEmail?: string): void
     removeClient(client);
     client.ws.close(1008, "Dispatch access changed");
   }
+  void pool.query(
+    `UPDATE ptt_pages
+     SET status = CASE
+       WHEN target_user_id = $1 OR (
+         $2::text IS NOT NULL AND target_user_id IN (
+           SELECT id FROM auth_users WHERE LOWER(email) = $2
+         )
+       ) THEN 'unavailable'
+       ELSE 'cancelled'
+     END,
+     responded_at = NOW()
+     WHERE status IN ('ringing', 'answered') AND (
+       caller_user_id = $1 OR target_user_id = $1 OR (
+         $2::text IS NOT NULL AND (
+           caller_user_id IN (SELECT id FROM auth_users WHERE LOWER(email) = $2)
+           OR target_user_id IN (SELECT id FROM auth_users WHERE LOWER(email) = $2)
+         )
+       )
+     )`,
+    [userId, ownerEmail?.trim().toLowerCase() || null],
+  ).catch((error) => logger.warn({ error, userId }, "Unable to close PTT invitations after access change"));
 }
 
 function takeToken(rawToken: string | null): PttToken | null {

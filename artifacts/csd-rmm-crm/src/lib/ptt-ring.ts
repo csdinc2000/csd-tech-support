@@ -12,6 +12,7 @@ export type IncomingRing = {
   groupId: string;
   callerUserId: string;
   callerName: string;
+  callerRole: string;
   channelId: string;
   channelName: string;
   createdAt: string;
@@ -31,15 +32,37 @@ export type PttRosterEntry = {
   onPtt: boolean;
 };
 
-export type RingStatus = "ringing" | "answered" | "declined" | "cancelled" | "missed";
+export type PttRosterResponse = {
+  staff: PttRosterEntry[];
+  ringSeconds: number;
+  callerRole: string;
+  canBroadcast: boolean;
+};
+
+export type RingStatus = "ringing" | "answered" | "connected" | "declined" | "cancelled" | "missed" | "unavailable";
 
 export type RingGroup = {
   groupId: string;
   channelId: string;
   createdAt: string;
   expiresAt: string;
-  pages: Array<{ id: number; targetUserId: string; name: string; status: RingStatus; respondedAt: string | null }>;
+  pages: Array<{ id: number; targetUserId: string; name: string; role: string; status: RingStatus; respondedAt: string | null }>;
 };
+
+export const PTT_ROLE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  administrator: "Administrator",
+  field_technician: "Technician",
+  software_developer: "Developer",
+  accounting: "Accounting",
+  it_manager: "IT Manager",
+  legal_team: "Legal",
+  secretary: "Front desk",
+};
+
+export function pttRoleLabel(role: string | null | undefined): string {
+  return role ? PTT_ROLE_LABELS[role] ?? role : "Staff";
+}
 
 /** Fired on window to move an already-open PTT console into a call. */
 export const PTT_JOIN_EVENT = "csd:ptt-join";
@@ -85,8 +108,10 @@ export function ringSecondsLeft(ring: Pick<IncomingRing, "expiresAt">, serverTim
 
 export const RING_STATUS_LABEL: Record<RingStatus, string> = {
   ringing: "Ringing…",
-  answered: "Answered",
+  answered: "Accepted · connecting",
+  connected: "Connected",
   declined: "Declined",
   cancelled: "Cancelled",
   missed: "No answer",
+  unavailable: "Unavailable",
 };

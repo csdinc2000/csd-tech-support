@@ -7,8 +7,8 @@ import { createPttSessionToken, setupPttServer } from "./ptt.ts";
 type ServerMessage = {
   type: string;
   clientId?: string;
-  users?: Array<{ id: string; name: string }>;
-  user?: { id: string; name: string };
+  users?: Array<{ id: string; name: string; role?: string }>;
+  user?: { id: string; name: string; role?: string };
   floorHolder?: string | null;
   action?: string;
   from?: string;
@@ -18,6 +18,7 @@ type ServerMessage = {
 class BrowserOperator {
   readonly messages: ServerMessage[] = [];
   readonly participants = new Map<string, string>();
+  readonly participantRoles = new Map<string, string>();
   floorHolder: string | null = null;
   clientId = "";
 
@@ -28,14 +29,20 @@ class BrowserOperator {
       if (message.type === "hello") this.clientId = message.clientId ?? "";
       if (message.type === "channel-state") {
         this.participants.clear();
-        for (const user of message.users ?? []) this.participants.set(user.id, user.name);
+        this.participantRoles.clear();
+        for (const user of message.users ?? []) {
+          this.participants.set(user.id, user.name);
+          this.participantRoles.set(user.id, user.role ?? "");
+        }
         this.floorHolder = message.floorHolder ?? null;
       }
       if (message.type === "user-joined" && message.user) {
         this.participants.set(message.user.id, message.user.name);
+        this.participantRoles.set(message.user.id, message.user.role ?? "");
       }
       if (message.type === "user-left" && message.clientId) {
         this.participants.delete(message.clientId);
+        this.participantRoles.delete(message.clientId);
       }
       if (message.type === "floor") {
         this.floorHolder = message.action === "released" ? null : message.clientId ?? null;
@@ -95,8 +102,8 @@ after(async () => {
   });
 });
 
-async function connectOperator(userId: string, name: string) {
-  const token = createPttSessionToken({ id: userId, name });
+async function connectOperator(userId: string, name: string, role = "field_technician") {
+  const token = createPttSessionToken({ id: userId, name, role });
   const socket = new WebSocket(`ws://127.0.0.1:${port}/ws/ptt?token=${token}`);
   const operator = new BrowserOperator(socket);
   await new Promise<void>((resolve, reject) => {
@@ -108,8 +115,8 @@ async function connectOperator(userId: string, name: string) {
 }
 
 test("two browser operators recover floor and peer signaling after one reconnects", async () => {
-  const alpha = await connectOperator("operator-alpha", "Operator Alpha");
-  const bravo = await connectOperator("operator-bravo", "Operator Bravo");
+  const alpha = await connectOperator("operator-alpha", "Operator Alpha", "field_technician");
+  const bravo = await connectOperator("operator-bravo", "Operator Bravo", "administrator");
 
   await alpha.waitFor(() => alpha.participants.size === 2, "both operators in Alpha's roster");
   assert.deepEqual(
@@ -120,12 +127,14 @@ test("two browser operators recover floor and peer signaling after one reconnect
     [...bravo.participants.values()].sort(),
     ["Operator Alpha", "Operator Bravo"],
   );
+  assert.equal(alpha.participantRoles.get(bravo.clientId), "administrator");
+  assert.equal(bravo.participantRoles.get(alpha.clientId), "field_technician");
 
   alpha.send({ type: "floor-request", channelId: "dispatch" });
   await bravo.waitFor(() => bravo.floorHolder === alpha.clientId, "Alpha to acquire the floor");
 
   const staleAlphaId = alpha.clientId;
-  const replacementAlpha = await connectOperator("operator-alpha", "Operator Alpha");
+  const replacementAlpha = await connectOperator("operator-alpha", "Operator Alpha", "field_technician");
   assert.notEqual(replacementAlpha.clientId, staleAlphaId);
   await bravo.waitFor(
     () =>
@@ -139,6 +148,7 @@ test("two browser operators recover floor and peer signaling after one reconnect
     [...bravo.participants.values()].filter((name) => name === "Operator Alpha").length,
     1,
   );
+  assert.equal(bravo.participantRoles.get(replacementAlpha.clientId), "field_technician");
 
   replacementAlpha.send({
     type: "signal",

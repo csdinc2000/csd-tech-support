@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { decodeMulaw, encodeMulaw, resamplePcm } from "@shared/roip-audio";
 import { PttRingPanel } from "@/components/ptt/ptt-ring-panel";
-import { isDirectChannel, PTT_JOIN_EVENT, pttCallFromSearch, type PttJoinDetail } from "@/lib/ptt-ring";
+import { isDirectChannel, pttRoleLabel, PTT_JOIN_EVENT, pttCallFromSearch, type PttJoinDetail } from "@/lib/ptt-ring";
 
 type Channel = {
   id: string;
@@ -34,6 +34,7 @@ type Participant = {
   id: string;
   name: string;
   email?: string;
+  role?: string;
   isTalking?: boolean;
 };
 
@@ -798,7 +799,7 @@ export default function PttDispatch() {
           let message: {
             type?: string;
             clientId?: string;
-            operator?: { name?: string };
+            operator?: { name?: string; role?: string };
             users?: Participant[];
             floorHolder?: string | null;
             user?: Participant;
@@ -1556,7 +1557,7 @@ export default function PttDispatch() {
                           {participant.id === clientId ? `${participant.name} (You)` : participant.name}
                         </p>
                         <p className={cn("text-[10px] font-bold uppercase tracking-widest mt-0.5", participant.isTalking ? "text-red-400" : "text-zinc-500")}>
-                          {participant.isTalking ? "Transmitting" : "Monitoring"}
+                           {pttRoleLabel(participant.role)} · {participant.isTalking ? "Transmitting" : "Monitoring"}
                         </p>
                       </div>
                       {participant.isTalking && <Volume2 className="h-4 w-4 text-red-500 animate-pulse shrink-0" />}
