@@ -521,7 +521,7 @@ export function registerTwilioForwarding(
         action: `${base}/webhooks/voice/dial-result${configuredTargets.length
           ? `?attempt=${configuredTargets[0].key}&screened=1&destination=${encodeURIComponent(callTargets[0])}`
           : !trackingForwardTo
-            ? "?route=staff"
+            ? "?route=staff&screened=1"
             : `?attempt=tracking&destination=${encodeURIComponent(callTargets[0])}`}`,
         method: "POST",
       });
@@ -750,19 +750,43 @@ export function registerTwilioForwarding(
         const value = req.query?.[key];
         if (typeof value === "string") acceptContext.set(key, value);
       }
-      const gather = twiml.gather({
-        numDigits: 1, timeout: 8, method: "POST",
-        action: `${buildBaseUrl(req)}/webhooks/voice/accept${acceptContext.size ? `?${acceptContext.toString()}` : ""}`,
+      const acceptUrl = `${buildBaseUrl(req)}/webhooks/voice/accept${
+        acceptContext.size ? `?${acceptContext.toString()}` : ""
+      }`;
+
+      // The instruction comes first and the caller name second: the gather
+      // window starts when the prompt starts, so a long name must never eat
+      // the technician time to react.
+      const prompt = spokenName
+        ? `Press any key to take this C S D call from ${spokenName}.`
+        : "Press any key to take this C S D call.";
+
+      // Two gathers in sequence give a second chance with no extra webhook
+      // round trip: an expired Gather falls through to the next verb. Only
+      // the final one reports an empty result, so the server still learns a
+      // leg was answered by someone who never accepted.
+      const first = twiml.gather({
+        numDigits: 1,
+        timeout: 12,
+        method: "POST",
+        action: acceptUrl,
       });
-      gather.say(
-        { voice: "alice" },
-        spokenName ? `Incoming CSD call from ${spokenName}. Press 1 to accept.` : "Incoming CSD tracking call. Press 1 to accept.",
-      );
+      first.say({ voice: "alice" }, prompt);
+
+      const second = twiml.gather({
+        numDigits: 1,
+        timeout: 6,
+        method: "POST",
+        action: acceptUrl,
+        actionOnEmptyResult: true,
+      });
+      second.say({ voice: "alice" }, `Still there? ${prompt}`);
+
       twiml.hangup();
       res.type("text/xml").send(twiml.toString());
       return;
     }
-    const settings = await getTwilioSettings();
+const settings = await getTwilioSettings();
     // Announce the configured whisper text, then optionally read the caller's number
     // digit-by-digit so it's easy to understand over the phone.
     twiml.say({ voice: settings.whisperVoice as any }, settings.whisperText);
@@ -786,27 +810,38 @@ export function registerTwilioForwarding(
   app.get("/webhooks/voice/whisper", whisperHandler);
   app.post("/webhooks/voice/accept", async (req: Request, res: Response) => {
     const twiml = new VoiceResponse();
-    if (req.body?.Digits === "1") {
-      const parentCallSid = String(req.query?.parent || "");
-      const childCallSid = String(req.body?.CallSid || "");
-      const destinationNumber = toValidE164(String(req.query?.destination || ""));
-      if (
-        req.query?.route === "staff" &&
-        /^CA[0-9a-f]{32}$/i.test(parentCallSid) &&
-        /^CA[0-9a-f]{32}$/i.test(childCallSid) &&
-        destinationNumber
-      ) {
-        await saveForwardingOutcome({
-          parentCallSid,
-          childCallSid,
-          attemptKey: "staff",
-          destinationNumber,
-          providerStatus: "unknown",
-          humanAccepted: true,
-        }).catch(() => logger.warn("Staff call acceptance could not be saved"));
-      }
+    // Any digit accepts. Requiring exactly "1" meant a fumbled keypress ended
+    // the call instead of connecting it.
+    const digits = String(req.body?.Digits ?? "").trim();
+    const accepted = digits.length > 0;
+
+    const parentCallSid = String(req.query?.parent || "");
+    const childCallSid = String(req.body?.CallSid || "");
+    const destinationNumber = toValidE164(String(req.query?.destination || ""));
+
+    // Record the outcome either way, so "answered but never accepted" stops
+    // being invisible in the forwarding telemetry.
+    if (
+      req.query?.route === "staff" &&
+      /^CA[0-9a-f]{32}$/i.test(parentCallSid) &&
+      /^CA[0-9a-f]{32}$/i.test(childCallSid) &&
+      destinationNumber
+    ) {
+      await saveForwardingOutcome({
+        parentCallSid,
+        childCallSid,
+        attemptKey: "staff",
+        destinationNumber,
+        providerStatus: "unknown",
+        humanAccepted: accepted,
+      }).catch(() => logger.warn("Staff call acceptance could not be saved"));
+    }
+
+    if (accepted) {
       twiml.say({ voice: "alice" }, "Connecting your call.");
-    } else twiml.hangup();
+    } else {
+      twiml.hangup();
+    }
     res.type("text/xml").send(twiml.toString());
   });
 
