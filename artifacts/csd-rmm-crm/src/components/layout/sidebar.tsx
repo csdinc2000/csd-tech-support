@@ -275,9 +275,10 @@ function SidebarBody({
         if (item.adminOnly && !isAdmin) return false;
         if (item.features) return item.features.some(f => can(f));
         return can(item.feature ?? group.feature);
-      }),
+      }).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
     }))
     .filter((group) => group.items.length > 0);
+  visibleGroups.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
 
   return (
     <div className="flex h-full flex-col">
