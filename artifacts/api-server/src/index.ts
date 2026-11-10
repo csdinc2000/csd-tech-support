@@ -54,6 +54,11 @@ import { applyStaffBusinessCardsMigration } from "./migrations/2026-11-06-staff-
 import { registerStaffBusinessCardRoutes } from "./staff-business-card";
 import { applyPttPagesMigration } from "./migrations/2026-11-06-ptt-pages";
 import { registerPttPageRoutes } from "./ptt-pages";
+import { applySalesAgentsMigration } from "./migrations/2026-11-10-sales-agents";
+import { registerLeadGenRoutes } from "./lead-gen-agent";
+import { registerSpeedToLeadRoutes, startSpeedToLeadWorker } from "./speed-to-lead";
+import { registerLeadResearchRoutes } from "./lead-research";
+import { registerExecutiveAssistantRoutes } from "./executive-assistant";
 import { applySlackDeliveryHealthMigration } from "./migrations/2026-09-22-slack-delivery-health";
 import { applySlackNotificationOutboxMigration } from "./migrations/2026-09-27-slack-notification-outbox";
 import { applyStaffInvitesMigration } from "./migrations/2026-09-23-staff-invites";
@@ -71,6 +76,7 @@ import { pool } from "./db";
 import { applyCallForwardingStaffOutcomesMigration } from "./migrations/2026-10-27-call-forwarding-staff-outcomes";
 import { applySharedInboxMigration } from "./migrations/2026-10-30-shared-inbox";
 import { applyReferralsMigration } from "./migrations/2026-10-30-referrals";
+import { applyVouchersMigration } from "./migrations/2026-11-10-vouchers";
 import { applyOutboundCallOutcomesMigration } from "./migrations/2026-11-06-outbound-call-outcomes";
 import { applyLocalWebsiteIntelligenceMigration } from "./local-website-intelligence";
 
@@ -443,6 +449,11 @@ async function initStripe() {
     logger.error({ error: err }, "Referrals migration failed");
   }
   try {
+    await applyVouchersMigration();
+  } catch (err: any) {
+    logger.error({ error: err }, "Vouchers migration failed");
+  }
+  try {
     await applyOutboundCallOutcomesMigration();
   } catch (err: any) {
     logger.error({ error: err }, "Outbound call outcomes migration failed");
@@ -452,12 +463,22 @@ async function initStripe() {
   } catch (err: any) {
     logger.error({ error: err }, "Local website intelligence migration failed");
   }
+  try {
+    await applySalesAgentsMigration();
+    startSpeedToLeadWorker();
+  } catch (err: any) {
+    logger.error({ error: err }, "Sales agents migration failed; Speed to Lead worker not started");
+  }
   await initStripe();
   startCatalogReconciliationWorker();
   registerStaffAccessRoutes(app);
   registerStaffProfileRoutes(app);
   registerStaffBusinessCardRoutes(app);
   registerPttPageRoutes(app);
+  registerLeadGenRoutes(app);
+  registerSpeedToLeadRoutes(app);
+  registerLeadResearchRoutes(app);
+  registerExecutiveAssistantRoutes(app);
   registerStaffContactProfileRoutes(app, requireStaffAdministrator, { isOwnerEmail: isAdminEmail });
   registerStaffInviteRoutes(app);
   registerStaffAccountDeletionRoutes(app);

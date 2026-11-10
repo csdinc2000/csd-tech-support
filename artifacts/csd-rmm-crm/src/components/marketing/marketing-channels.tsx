@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import {
   BarChart3, Building2, Code2, Globe, Inbox, Mail, MapPin, MessageCircle, Package, PhoneForwarded, ShieldAlert,
-  Store, Target, UserCircle, Gift,
+  Store, Target, Ticket, UserCircle, Gift,
 } from "lucide-react";
 import type { StaffFeature } from "@/hooks/use-admin-access";
 
@@ -33,6 +33,7 @@ const MODULE_GROUPS: { id: string; title: string; modules: Module[] }[] = [
       { id: "requests", label: "Service requests", description: "Intake form and voice submissions", href: "/admin/intakes", icon: Inbox, feature: "crm" },
       { id: "customers", label: "Customers", description: "Contacts and accounts to re-engage", href: "/crm/customers", icon: Building2, feature: "crm" },
       { id: "referrals", label: "Referral program", description: "Review referrals and issue rewards", href: "/marketing/referrals", icon: Gift, feature: "crm" },
+      { id: "vouchers", label: "Discount vouchers", description: "Email a % off code and redeem it at checkout", href: "/marketing/vouchers", icon: Ticket, feature: "crm" },
     ],
   },
   {

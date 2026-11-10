@@ -42,6 +42,8 @@ import MyProfilePage from "@/pages/my-profile";
 import BusinessCardPage from "@/pages/business-card";
 import CompliancePage from "@/pages/compliance";
 import AriaPage from "@/pages/aria";
+import ExecutiveAssistantPage from "@/pages/executive-assistant";
+import SalesAgentsPage from "@/pages/sales-agents";
 import AriaMultiCam from "@/pages/aria-multicam";
 import BillingPage from "@/pages/billing";
 import Invoices from "@/pages/invoices";
@@ -261,6 +263,11 @@ export function AdminRouter({ ownerAccessOverride }: { ownerAccessOverride?: Own
       <Route path="/reports"><RequireFeature feature="reports"><Reports /></RequireFeature></Route>
       <Route path="/network-discovery"><RequireFeature feature="operations"><NetworkDiscovery /></RequireFeature></Route>
       <Route path="/website-discovery"><RequireFeature feature="crm"><WebsiteDiscovery /></RequireFeature></Route>
+      {/* Sales Agents — Lead Generation Agent / Speed to Lead / Sales Copilot */}
+      <Route path="/sales"><RequireFeature feature="crm"><SalesAgentsPage /></RequireFeature></Route>
+      <Route path="/sales/lead-gen"><RequireFeature feature="crm"><SalesAgentsPage /></RequireFeature></Route>
+      <Route path="/sales/speed-to-lead"><RequireFeature feature="crm"><SalesAgentsPage /></RequireFeature></Route>
+      <Route path="/sales/copilot"><RequireFeature feature="crm"><SalesAgentsPage /></RequireFeature></Route>
 
       {/* Customers hub — Overview / Leads & Pipeline (Leads + Deals + Intakes) / Contacts / Clients */}
       <Route path="/crm"><RequireFeature feature="crm"><CustomersHub /></RequireFeature></Route>
@@ -317,6 +324,7 @@ export function AdminRouter({ ownerAccessOverride }: { ownerAccessOverride?: Own
         <RequireFeature feature="compliance"><CompliancePage /></RequireFeature>
       </Route>
       <Route path="/aria" component={AriaPage} />
+      <Route path="/assistant" component={ExecutiveAssistantPage} />
       <Route path="/aria-command" component={AriaMultiCam} />
       <Route path="/billing">
         <RequireFeature feature="billing"><BillingPage /></RequireFeature>
@@ -363,6 +371,7 @@ export function AdminRouter({ ownerAccessOverride }: { ownerAccessOverride?: Own
       <Route path="/marketing"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
       <Route path="/marketing/campaigns"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
       <Route path="/marketing/referrals"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
+      <Route path="/marketing/vouchers"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
       <Route path="/marketing/tools"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
       <Route path="/marketing/playbook"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
       <Route path="/marketing/channels"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>

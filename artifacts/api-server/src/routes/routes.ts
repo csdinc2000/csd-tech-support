@@ -188,6 +188,7 @@ import { registerGoogleContactRoutes } from "./google-contact-routes";
 import { registerContactSmsRoutes } from "./contact-sms-routes";
 import { registerSharedInboxRoutes } from "../shared-inbox";
 import { recordIntakeReferral, registerReferralRoutes, type ReferralMailer } from "../referrals";
+import { registerVoucherRoutes, type VoucherMailer } from "../vouchers";
 import { defaultAgentPhones, registerOutboundCallRoutes } from "./outbound-call-routes";
 import { registerBrowserVoiceRoutes } from "./browser-voice-routes";
 import { registerStaffMeetingRoutes } from "../staff-meetings";
@@ -251,6 +252,7 @@ type RouteRegistrationOptions = {
   sendSms?: typeof defaultSendSms;
   marketplaceMailer?: MarketplaceMailer;
   referralMailer?: ReferralMailer;
+  voucherMailer?: VoucherMailer;
   marketplaceScanReader?: MarketplaceScanReader;
   marketplaceLookupReader?: MarketplaceLookupReader | null;
 };
@@ -351,6 +353,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   registerServiceContractRoutes(app);
   registerMarketplaceRoutes(app, { mailer: options.marketplaceMailer, scanReader: options.marketplaceScanReader, lookupReader: options.marketplaceLookupReader });
   registerReferralRoutes(app, { mailer: options.referralMailer });
+  registerVoucherRoutes(app, { mailer: options.voucherMailer });
   registerVoiceIntakeRoutes(app);
   await ensureInvoiceSchema();
   await applyCatalogInvoiceLinkMigration();
@@ -4520,10 +4523,12 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
 
       // Call ARIA service
       const model = req.body.model || 'claude';
+      const access = await getStaffAccess(req);
       const response = await ariaService.chat(chatMessages, conversationId, model, {
         userId: req.dbUser!.id, conversationId, scope: await getStaffAssignmentScope(req),
-        canReadCrm: (await getStaffAccess(req)).features.crm,
-        canCommunicate: (await getStaffAccess(req)).features.communications,
+        canReadCrm: access.features.crm,
+        canCommunicate: access.features.communications,
+        features: access.features,
       });
 
       // Save assistant response
@@ -4608,7 +4613,11 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
           res.write(`data: ${JSON.stringify({ type: "chunk", content: chunk })}\n\n`);
         },
         model,
-        { userId: req.dbUser!.id, conversationId, scope: await getStaffAssignmentScope(req), canReadCrm: (await getStaffAccess(req)).features.crm, canCommunicate: (await getStaffAccess(req)).features.communications }
+        await (async () => {
+          const access = await getStaffAccess(req);
+          return { userId: req.dbUser!.id, conversationId, scope: await getStaffAssignmentScope(req),
+            canReadCrm: access.features.crm, canCommunicate: access.features.communications, features: access.features };
+        })()
       );
 
       // Save complete assistant message

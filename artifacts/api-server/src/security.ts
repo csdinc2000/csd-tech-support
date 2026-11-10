@@ -124,6 +124,8 @@ export function requiredFeatureForApiPath(path: string, method = "GET"): StaffFe
   if (path === "/api/staff-access" || path.startsWith("/api/staff-access/")) return "staffAdmin";
   // Referral rewards are a promise to customers, so only owners change them.
   if (path === "/api/crm/referrals/settings" && verb !== "GET") return "owner";
+  // Speed to Lead decides whether customers get automatic texts.
+  if (path === "/api/crm/speed-to-lead/settings" && verb !== "GET") return "owner";
   if (
     path === "/api/clients" || path.startsWith("/api/clients/") ||
     path === "/api/crm" || path.startsWith("/api/crm/")

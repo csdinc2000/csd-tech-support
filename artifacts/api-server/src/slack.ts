@@ -526,3 +526,34 @@ export async function queueIncomingCallNotification(call: {
 }
 
 export { sendSlackMessage };
+/** Speed to Lead: a new lead has waited past the first-contact target. */
+export async function queueSpeedToLeadEscalation(input: {
+  leadId: number;
+  name: string;
+  contact: string;
+  service: string;
+  waitingMinutes: number;
+  targetMinutes: number;
+}): Promise<void> {
+  try {
+    const text = `Lead waiting ${input.waitingMinutes} min (target ${input.targetMinutes}): ${input.name}`;
+    await queueSlackMessage("intake", `speed-to-lead-${input.leadId}`, {
+      channel: process.env.SLACK_CHANNEL_ID || "configured-channel",
+      text,
+      blocks: [
+        { type: "section", text: { type: "mrkdwn", text: `*:rotating_light: Speed to Lead — nobody has contacted this lead yet*` } },
+        {
+          type: "section",
+          fields: [
+            { type: "mrkdwn", text: `*Name:* ${input.name}` },
+            { type: "mrkdwn", text: `*Contact:* ${input.contact}` },
+            { type: "mrkdwn", text: `*Service:* ${input.service}` },
+            { type: "mrkdwn", text: `*Waiting:* ${input.waitingMinutes} min (target ${input.targetMinutes})` },
+          ],
+        },
+      ],
+    });
+  } catch {
+    logger.warn("[slack] speed-to-lead escalation could not be prepared");
+  }
+}

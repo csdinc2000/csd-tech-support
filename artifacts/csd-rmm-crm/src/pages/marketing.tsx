@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/react";
 import { useLocation, useSearch } from "wouter";
-import { AlertCircle, CheckSquare, Gift, LayoutDashboard, LayoutGrid, Megaphone, RefreshCw, Wand2 } from "lucide-react";
+import { AlertCircle, CheckSquare, Gift, LayoutDashboard, LayoutGrid, Megaphone, RefreshCw, Ticket, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { PageShell } from "@/components/layout/page-shell";
@@ -17,12 +17,14 @@ import { MarketingTools, isMarketingTool, type MarketingTool } from "@/component
 import { MarketingPlaybook } from "@/components/marketing/marketing-playbook";
 import { MarketingChannels } from "@/components/marketing/marketing-channels";
 import { MarketingReferrals } from "@/components/marketing/marketing-referrals";
+import { MarketingVouchers } from "@/components/marketing/marketing-vouchers";
 
 /**
  * Marketing hub — one home for the marketing department:
  *   /marketing            Overview: KPIs, demand trend, funnel, channel attribution
  *   /marketing/campaigns  Campaigns and tracking numbers
  *   /marketing/referrals  Customer referral program (portal: /portal/referrals)
+ *   /marketing/vouchers   Percentage-off discount vouchers emailed to customers
  *   /marketing/tools      Review requests, content studio, tracked links, brand kit (?tool=)
  *   /marketing/playbook   Weekly / monthly routine
  *   /marketing/channels   Every existing module marketing works from
@@ -31,12 +33,13 @@ import { MarketingReferrals } from "@/components/marketing/marketing-referrals";
  * jobs, call tracking); nothing here sends a message on its own.
  */
 
-type HubTab = "overview" | "campaigns" | "referrals" | "tools" | "playbook" | "channels";
+type HubTab = "overview" | "campaigns" | "referrals" | "vouchers" | "tools" | "playbook" | "channels";
 
 const TABS: { id: HubTab; label: string; path: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "overview", label: "Overview", path: "/marketing", icon: LayoutDashboard },
   { id: "campaigns", label: "Campaigns", path: "/marketing/campaigns", icon: Megaphone },
   { id: "referrals", label: "Referrals", path: "/marketing/referrals", icon: Gift },
+  { id: "vouchers", label: "Vouchers", path: "/marketing/vouchers", icon: Ticket },
   { id: "tools", label: "Tools", path: "/marketing/tools", icon: Wand2 },
   { id: "playbook", label: "Playbook", path: "/marketing/playbook", icon: CheckSquare },
   { id: "channels", label: "All modules", path: "/marketing/channels", icon: LayoutGrid },
@@ -186,6 +189,7 @@ export function MarketingHubView({
           <MarketingCampaigns data={data} numbers={byNumberQuery.data ?? []} days={days} canViewCalls={canViewCalls} isLoading={isLoading} />
         )}
         {tab === "referrals" && <MarketingReferrals isAdmin={isAdmin} />}
+        {tab === "vouchers" && <MarketingVouchers />}
         {tab === "tools" && (
           <MarketingTools
             tool={tool}

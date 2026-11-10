@@ -37,6 +37,15 @@ import { cn } from '@/lib/utils';
 import { useAria, type AIModel } from '@/hooks/use-aria';
 import { useVoice } from '@/hooks/use-voice';
 import { AriaConnections } from '@/components/aria/aria-connections';
+import { AriaTodayStrip } from '@/components/assistant/aria-today-strip';
+
+// `/aria?prompt=...` (from the Executive Assistant's example prompts) pre-fills
+// the input. It is never sent automatically; the user reviews and presses Send.
+function initialPromptFromUrl(): string {
+  if (typeof window === 'undefined') return '';
+  const prompt = new URLSearchParams(window.location.search).get('prompt');
+  return prompt ? prompt.slice(0, 2000) : '';
+}
 
 const MODEL_ICONS: Record<string, any> = {
   claude: Bot,
@@ -57,7 +66,7 @@ const MODEL_LABELS: Record<string, string> = {
 };
 
 export default function AriaPage() {
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState(initialPromptFromUrl);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastSpokenIndexRef = useRef<number>(-1);
@@ -108,6 +117,15 @@ export default function AriaPage() {
     hasSpeechRecognition,
     hasSpeechSynthesis,
   } = useVoice({ onTranscript: handleVoiceTranscript, onFinalTranscript: handleFinalTranscript });
+
+  useEffect(() => {
+    if (!initialPromptFromUrl()) return;
+    // Drop ?prompt= so a reload doesn't refill the box, then focus for review.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('prompt');
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    textareaRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -163,6 +181,7 @@ export default function AriaPage() {
     { icon: FileText, text: "Generate a 30-day content calendar", category: "Marketing" },
     { icon: HelpCircle, text: "Create FAQ responses for common customer questions", category: "FAQ" },
     { icon: Sparkles, text: "What's the status of our current leads and tickets?", category: "Dashboard" },
+    { icon: Clock, text: "Brief me on today", category: "Executive Assistant" },
   ];
 
   if (!isConfigured) {
@@ -221,6 +240,8 @@ export default function AriaPage() {
           </div>
         </div>
       </div>
+
+      <AriaTodayStrip />
 
       <AriaConnections
         conversationId={conversationId}
