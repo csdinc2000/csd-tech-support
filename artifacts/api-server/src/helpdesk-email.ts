@@ -99,7 +99,14 @@ export async function sendEmail(
     html: options.html || body.replace(/\n/g, "<br>"),
     ...(options.bcc?.length ? { bcc: options.bcc } : {}),
   };
-  if (isSmtpConfigured()) {
+  // Prefer SendGrid when it is configured. Its domain authentication for
+  // computersystemsdepot.com is valid (DKIM + SPF), while the cPanel SMTP
+  // host sends from an IP the SPF record does not list, so that mail fails
+  // authentication at the recipient and is dropped or filed as spam.
+  // Set EMAIL_PROVIDER=smtp to force the SMTP path back on.
+  const preferSmtp =
+    process.env.EMAIL_PROVIDER === "smtp" || !process.env.SENDGRID_API_KEY;
+  if (preferSmtp && isSmtpConfigured()) {
     return withCapacityTracking("smtp", options.operation, () => sendSmtpMail(message));
   }
   return withCapacityTracking("sendgrid", options.operation, async () => {

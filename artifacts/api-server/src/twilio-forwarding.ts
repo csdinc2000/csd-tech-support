@@ -543,7 +543,7 @@ export function registerTwilioForwarding(
           ? `?attempt=${configuredTargets[0].key}&screened=1&destination=${encodeURIComponent(callTargets[0])}`
           : !trackingForwardTo
             ? "?route=staff&screened=1"
-            : `?attempt=tracking${settings.whisperEnabled ? "&screened=1" : ""}&destination=${encodeURIComponent(callTargets[0])}`}`,
+            : `?attempt=tracking&destination=${encodeURIComponent(callTargets[0])}`}`,
         method: "POST",
       });
       const numberOpts: any = {};
@@ -565,20 +565,6 @@ export function registerTwilioForwarding(
           targetOptions.statusCallback = `${base}/webhooks/voice/staff-destination-status?${context.toString()}`;
           targetOptions.statusCallbackMethod = "POST";
           targetOptions.statusCallbackEvent = ["initiated", "ringing", "answered", "completed"];
-        } else if (configuredTargets.length && req.body?.CallSid) {
-          const context = new URLSearchParams({
-            attempt: configuredTargets[0].key,
-            parent: String(req.body.CallSid),
-            destination: target,
-          });
-          targetOptions.url = `${base}/webhooks/voice/whisper?from=${encodeURIComponent(fromNumber)}&confirm=1&${context.toString()}`;
-        } else if (trackingForwardTo && settings.whisperEnabled && req.body?.CallSid) {
-          const context = new URLSearchParams({
-            attempt: "tracking",
-            parent: String(req.body.CallSid),
-            destination: target,
-          });
-          targetOptions.url = `${base}/webhooks/voice/whisper?from=${encodeURIComponent(fromNumber)}&confirm=1&${context.toString()}`;
         }
         dial.number(targetOptions, target);
       }
@@ -608,33 +594,24 @@ export function registerTwilioForwarding(
     const screened = req.query?.screened === "1";
     const attemptKey = (req.query?.attempt as string) || "primary";
     const destinationNumber = toValidE164((req.query?.destination as string) || "");
-    const parentCallSid = String(req.body?.CallSid || "");
-    const childCallSid = String(req.body?.DialCallSid || "");
     const providerStatus = [
       "completed", "no-answer", "busy", "failed", "canceled", "in-progress",
       "ringing", "queued", "initiated",
     ].includes(dialStatus) ? dialStatus : "unknown";
-    let humanAccepted = false;
-    if (/^CA[0-9a-f]{32}$/i.test(parentCallSid) && /^CA[0-9a-f]{32}$/i.test(childCallSid)) {
-      try {
-        const outcomes = await withVoiceRoutingDeadline(loadForwardingOutcomes(parentCallSid), 700);
-        humanAccepted = outcomes.some((outcome) => outcome.childCallSid === childCallSid && outcome.humanAccepted);
-      } catch {
-        logger.warn("Forwarded-call acceptance could not be verified from saved outcomes");
-      }
-    }
-    const accepted = humanAccepted || (screened && wasDialAnswered(dialStatus, req.body?.DialBridged, true));
+    const accepted = screened && wasDialAnswered(dialStatus, req.body?.DialBridged, true);
     if (
-      /^CA[0-9a-f]{32}$/i.test(parentCallSid) &&
-      /^CA[0-9a-f]{32}$/i.test(childCallSid) &&
+      req.body?.CallSid &&
+      req.body?.DialCallSid &&
+      /^CA[0-9a-f]{32}$/i.test(req.body.CallSid as string) &&
+      /^CA[0-9a-f]{32}$/i.test(req.body.DialCallSid as string) &&
       destinationNumber &&
       ["primary", "backup1", "backup2", "tracking"].includes(attemptKey) &&
       req.query?.route !== "staff"
     ) {
       try {
         await saveForwardingOutcome({
-          parentCallSid,
-          childCallSid,
+          parentCallSid: req.body.CallSid as string,
+          childCallSid: req.body.DialCallSid as string,
           attemptKey: attemptKey as "primary" | "backup1" | "backup2" | "tracking",
           destinationNumber,
           providerStatus: providerStatus as any,
@@ -644,7 +621,7 @@ export function registerTwilioForwarding(
         logger.warn("Forwarding call outcome could not be saved");
       }
     }
-    if (wasDialAnswered(dialStatus, req.body?.DialBridged, screened) || humanAccepted) {
+    if (wasDialAnswered(dialStatus, req.body?.DialBridged, screened)) {
       // Owner picked up and call ended normally — hang up cleanly.
       twiml.hangup();
       res.type("text/xml").send(twiml.toString());
