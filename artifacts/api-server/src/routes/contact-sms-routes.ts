@@ -10,6 +10,7 @@ import {
   type SmsMessageClass,
 } from "../staff-dispatch";
 import { getTwilioSettings } from "../twilio-settings-storage";
+import { isQuietHours } from "../speed-to-lead";
 import { enqueueSmsForwardBroadcast, parseSmsForwardTargets } from "../sms-forward-outbox";
 import { toE164 as normalizeE164, toValidE164 } from "../twilio";
 import { inboxActor, recordSentBy, sendTeamReply } from "../shared-inbox";
@@ -189,6 +190,27 @@ export function registerContactSmsRoutes(
         res.status(400).json({ error: "Message body is too long" });
         return;
       }
+      // Marketing traffic carries TCPA obligations that service traffic does
+      // not: visible opt-out wording, and nothing sent during quiet hours.
+      // Service messages to consented customers are deliberately unaffected,
+      // so an after-hours outage notice still goes out.
+      if (messageClass === "marketing") {
+        if (!/\bSTOP\b/i.test(body)) {
+          res.status(400).json({
+            error: "Marketing messages must include opt-out wording, for example: Reply STOP to opt out.",
+          });
+          return;
+        }
+        const quietSettings = await getTwilioSettings().catch(() => null);
+        const timezone = quietSettings?.businessHoursTimezone || "America/New_York";
+        if (isQuietHours(new Date(), timezone)) {
+          res.status(409).json({
+            error: "Marketing texts are blocked between 9pm and 8am local time.",
+          });
+          return;
+        }
+      }
+
       if (!contactIds.length) {
         res.status(400).json({ error: "Select at least one contact" });
         return;

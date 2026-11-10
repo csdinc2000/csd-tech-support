@@ -381,58 +381,76 @@ export function registerTwilioForwarding(
   // ── INCOMING CALL ───────────────────────────────────────────────────────────
   async function handleIncomingVoice(req: Request, res: Response): Promise<void> {
     const base = buildBaseUrl(req);
-    const settings = await withVoiceRoutingDeadline(loadTwilioSettings());
     const twiml = new VoiceResponse();
+
+    // Settings and the tracking-number lookup do not depend on each other, so
+    // they run concurrently instead of stacking two webhook deadlines back to
+    // back. Twilio always sends To; only the missing-To case has to wait for
+    // settings before it can look anything up.
+    const rawTo = (req.body?.To as string) || "";
+    const settingsPromise = withVoiceRoutingDeadline(loadTwilioSettings());
+    const earlyTracking = rawTo
+      ? withVoiceRoutingDeadline(lookupTracking(rawTo)).catch((e) => {
+          console.error("[tracking lookup]", e);
+          return null;
+        })
+      : null;
+
+    const settings = await settingsPromise;
 
     // Resolve tracking number (CallRail-style attribution). If the To number
     // matches a configured tracking number with a callFlowId, hand off to the
     // flow executor. Otherwise fall back to the global single-number forwarding.
-    const toNumber = (req.body?.To as string) || settings.twilioPhoneNumber;
+    const toNumber = rawTo || settings.twilioPhoneNumber;
     // Answer before forwarding or entering any custom flow, for every caller.
     // No CRM membership, caller-ID or business-hours condition controls this.
     appendMainLineGreeting(twiml, toNumber);
+
+    // The staff notification never shapes the TwiML, so it must not sit in
+    // front of the caller on an open line. Fire it and move on.
     if (req.body?.CallSid) {
-      await withVoiceRoutingDeadline(notifyStaffEvent({
+      void withVoiceRoutingDeadline(notifyStaffEvent({
         kind: "call", id: req.body.CallSid, businessNumber: settings.twilioPhoneNumber,
       })).catch(() => logger.warn("Incoming-call staff SMS queue failed; call routing continued"));
     }
+
     const configuredTargets = isMainBusinessLine(toNumber) ? configuredForwardTargets(settings) : [];
     let trackingId: number | null = null;
     let trackingChannel: string | null = null;
     let trackingKeywords: string | null = null;
     let trackingFlowId: number | null = null;
     let trackingForwardTo: string | null = null;
-    try {
-      const tn = await withVoiceRoutingDeadline(lookupTracking(toNumber));
-      if (tn && tn.active) {
-        trackingId = tn.id;
-        trackingChannel = tn.sourceChannel ?? null;
-        trackingKeywords = tn.keywords ?? null;
-        trackingFlowId = tn.callFlowId ?? null;
-        trackingForwardTo = tn.forwardToNumber ?? null;
-      }
-    } catch (e) { console.error("[tracking lookup]", e); }
-
-    // Log the call (insert or refresh existing row by CallSid)
-    try {
-      await withVoiceRoutingDeadline(saveCallLog({
-        callSid: (req.body?.CallSid as string) || `unknown-${Date.now()}`,
-        fromNumber: (req.body?.From as string) || "Unknown",
-        toNumber,
-        fromCity: (req.body?.FromCity as string) || null,
-        fromState: (req.body?.FromState as string) || null,
-        fromCountry: (req.body?.FromCountry as string) || null,
-        status: "ringing",
-        direction: "inbound",
-        durationSeconds: 0,
-        hadVoicemail: false,
-        trackingNumberId: trackingId,
-        sourceChannel: trackingChannel,
-        keywords: trackingKeywords,
-      }));
-    } catch (e) {
-      console.error("[call-log] insert failed:", e);
+    const tn = earlyTracking
+      ? await earlyTracking
+      : await withVoiceRoutingDeadline(lookupTracking(toNumber)).catch((e) => {
+          console.error("[tracking lookup]", e);
+          return null;
+        });
+    if (tn && tn.active) {
+      trackingId = tn.id;
+      trackingChannel = tn.sourceChannel ?? null;
+      trackingKeywords = tn.keywords ?? null;
+      trackingFlowId = tn.callFlowId ?? null;
+      trackingForwardTo = tn.forwardToNumber ?? null;
     }
+
+    // Log the call (insert or refresh existing row by CallSid). Persistence
+    // only, so it must never hold the caller waiting on a database write.
+    void withVoiceRoutingDeadline(saveCallLog({
+      callSid: (req.body?.CallSid as string) || `unknown-${Date.now()}`,
+      fromNumber: (req.body?.From as string) || "Unknown",
+      toNumber,
+      fromCity: (req.body?.FromCity as string) || null,
+      fromState: (req.body?.FromState as string) || null,
+      fromCountry: (req.body?.FromCountry as string) || null,
+      status: "ringing",
+      direction: "inbound",
+      durationSeconds: 0,
+      hadVoicemail: false,
+      trackingNumberId: trackingId,
+      sourceChannel: trackingChannel,
+      keywords: trackingKeywords,
+    })).catch((e) => console.error("[call-log] insert failed:", e));
 
     // If this tracking number has a custom call flow, jump into the flow
     // executor immediately (skip the legacy single-number routing below).
@@ -512,9 +530,9 @@ export function registerTwilioForwarding(
       }
       const dial = twiml.dial({
         callerId,
-        // Give a real chance to answer: at least 25s of ringing, even if the
-        // stored setting is lower. A higher saved value still wins.
-        timeout: Math.max(settings.dialTimeoutSeconds || 0, 25),
+        // Ring each target for the dial timeout set in Phone Settings. That
+        // setting is authoritative; 5s is only a floor against a zeroed value.
+        timeout: Math.max(settings.dialTimeoutSeconds || 25, 5),
         answerOnBridge: true,
         // Always route to dial-result so missed-call alerts fire even when
         // voicemail is disabled. dial-result handles the hangup vs. voicemail.
@@ -630,7 +648,7 @@ export function registerTwilioForwarding(
       const callerId = forwardedCallerId(fromNumber, (req.body?.To as string) || settings.twilioPhoneNumber, settings.showCallerIdOnForward);
       const dial = twiml.dial({
         callerId,
-        timeout: Math.max(settings.dialTimeoutSeconds || 0, 25),
+        timeout: Math.max(settings.dialTimeoutSeconds || 25, 5),
         answerOnBridge: true,
         action: `${base}/webhooks/voice/dial-result?attempt=${nextTarget.key}${screened ? "&screened=1" : ""}&destination=${encodeURIComponent(nextTarget.number)}`,
         method: "POST",
