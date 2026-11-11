@@ -99,13 +99,13 @@ export async function sendEmail(
     html: options.html || body.replace(/\n/g, "<br>"),
     ...(options.bcc?.length ? { bcc: options.bcc } : {}),
   };
-  // Prefer SendGrid when it is configured. Its domain authentication for
-  // computersystemsdepot.com is valid (DKIM + SPF), while the cPanel SMTP
-  // host sends from an IP the SPF record does not list, so that mail fails
-  // authentication at the recipient and is dropped or filed as spam.
-  // Set EMAIL_PROVIDER=smtp to force the SMTP path back on.
-  const preferSmtp =
-    process.env.EMAIL_PROVIDER === "smtp" || !process.env.SENDGRID_API_KEY;
+  // SendGrid holds valid domain authentication for computersystemsdepot.com,
+  // but the account is out of credits and returns 401 Maximum credits
+  // exceeded, so SMTP remains the default transport. The SMTP host sends from
+  // an IP the domain SPF record does not list, which is why that mail fails
+  // authentication at the recipient. Fix SPF/DMARC in DNS, or top up SendGrid
+  // and set EMAIL_PROVIDER=sendgrid.
+  const preferSmtp = process.env.EMAIL_PROVIDER !== "sendgrid";
   if (preferSmtp && isSmtpConfigured()) {
     return withCapacityTracking("smtp", options.operation, () => sendSmtpMail(message));
   }
