@@ -25,6 +25,7 @@ import { apiRequest, getQueryFn } from "@/lib/queryClient";
 import { useStaffCatalog } from "@/hooks/use-catalog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { formatUsdCents } from "@/lib/format";
 
 type View = "businesses" | "reports" | "saved";
 type TechnologyFilter = "all" | "wordpress" | "php";
@@ -41,9 +42,7 @@ function reportHasEvidence(report: LocalBusinessAuditResult | undefined): boolea
   return Boolean(report && (report.cms || report.language || report.technologies.length > 0));
 }
 
-function formatCents(cents: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
-}
+const formatCents = (cents: number): string => formatUsdCents(cents);
 
 function domainLabel(website: string): string {
   try {

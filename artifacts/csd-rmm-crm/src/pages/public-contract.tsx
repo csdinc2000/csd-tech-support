@@ -6,8 +6,9 @@ import { apiRequest, ApiRequestError } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { formatUsdCents } from "@/lib/format";
 
-const money = (cents: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+const money = (cents: number) => formatUsdCents(cents);
 const contractDate = (value: string) => {
   const datePart = String(value).slice(0, 10);
   const date = new Date(`${datePart}T12:00:00`);

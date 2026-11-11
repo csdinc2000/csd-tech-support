@@ -84,11 +84,15 @@ export function IncomingCallAlertsSession({
     void queryClient.cancelQueries({ queryKey, exact: true });
     queryClient.removeQueries({ queryKey, exact: true });
   }, [allowed, queryClient, userId]);
+  // The clock only matters while a call is ringing (to drop stale data);
+  // otherwise every poll re-renders anyway.
+  const hasRinging = allowed && (status.data?.ringing.length ?? 0) > 0;
   useEffect(() => {
-    if (!allowed) return;
+    if (!hasRinging) return;
+    setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [allowed]);
+  }, [hasRinging]);
   useEffect(() => {
     setSoundEnabled(false);
     setSoundError("");

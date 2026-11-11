@@ -26,8 +26,10 @@ export function useAdminAccess() {
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: isLoaded && isSignedIn && Boolean(userId),
     staleTime: 5_000,
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: true,
+    // Only drives what the UI shows; the server checks access on every
+    // request. Refresh while the tab is visible and whenever it regains focus.
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
   return {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { isPublicApiRequest } from "./api-auth-boundary";
-import { requiredFeatureForApiPath } from "./security";
+import { isAllStaffApiPath, requiredFeatureForApiPath } from "./security";
 
 test("catalog portal read, checkout, and inquiry routes are public API paths", () => {
   assert.equal(isPublicApiRequest("GET", "/api/portal/catalog/items"), true);
@@ -62,4 +62,46 @@ test("customer and CRM APIs require the admin-controlled CRM feature", () => {
   ]) {
     assert.equal(requiredFeatureForApiPath(path, "GET"), "crm", `${path} must require CRM access`);
   }
+});
+
+test("reading or deleting SMS history needs communications; texting one customer stays open to staff", () => {
+  for (const [method, path] of [
+    ["DELETE", "/api/sms/threads/9545550101"],
+    ["DELETE", "/api/sms/messages/12"],
+    ["GET", "/api/sms/bulk-recipients"],
+    ["POST", "/api/sms/bulk-send"],
+  ] as const) {
+    assert.equal(requiredFeatureForApiPath(path, method), "communications", `${method} ${path}`);
+  }
+  assert.equal(requiredFeatureForApiPath("/api/sms/send", "POST"), null);
+  assert.equal(isAllStaffApiPath("/api/sms/send", "POST"), true);
+});
+
+test("the customer's invoice page can record a view without signing in", () => {
+  assert.equal(isPublicApiRequest("POST", "/api/public/invoices/abc123/view"), true);
+  assert.equal(isPublicApiRequest("POST", "/api/public/invoices/abc123/void"), false);
+});
+
+test("unclassified API paths are not open to staff (fail closed)", () => {
+  const path = "/api/some-new-feature/records";
+  assert.equal(isPublicApiRequest("GET", path), false);
+  assert.equal(requiredFeatureForApiPath(path, "GET"), null);
+  assert.equal(isAllStaffApiPath(path, "GET"), false);
+  // Method-limited entries don't leak to other verbs.
+  assert.equal(isAllStaffApiPath("/api/helpdesk/departments", "GET"), true);
+  assert.equal(isAllStaffApiPath("/api/helpdesk/departments", "POST"), false);
+});
+
+test("single-feature tool APIs follow the gate on their page", () => {
+  assert.equal(requiredFeatureForApiPath("/api/automation-scripts/4/execute", "POST"), "automation");
+  assert.equal(requiredFeatureForApiPath("/api/patches/install", "POST"), "operations");
+  assert.equal(requiredFeatureForApiPath("/api/network", "GET"), "operations");
+  assert.equal(requiredFeatureForApiPath("/api/network-scans", "GET"), "operations");
+  assert.equal(requiredFeatureForApiPath("/api/contact-import/import", "POST"), "crm");
+  assert.equal(requiredFeatureForApiPath("/api/paypal-import/import", "POST"), "invoices");
+  assert.equal(requiredFeatureForApiPath("/api/helpdesk/email/inbound", "POST"), "helpdeskAdmin");
+});
+
+test("HEAD follows the GET classification for all-staff paths", () => {
+  assert.equal(isAllStaffApiPath("/api/helpdesk/departments", "HEAD"), true);
 });

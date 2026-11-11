@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import { requireAuth } from "./middlewares/clerkAuth";
-import { isAdminUser, requiredFeatureForApiPath } from "./security";
+import { isAdminUser, isAllStaffApiPath, requiredFeatureForApiPath } from "./security";
+import { logger } from "./lib/logger";
 import { getStaffAccess } from "./staff-access";
 
 // Paths under /api that stay reachable WITHOUT a logged-in session. Some are
@@ -9,7 +10,10 @@ export function isPublicApiRequest(method: string, path: string): boolean {
   if (path === "/api/health" || path === "/api/healthz") return true;
   if (
     (method === "GET" && /^\/api\/public\/invoices\/[^/]+$/.test(path)) ||
-    (method === "POST" && /^\/api\/public\/invoices\/[^/]+\/create-stripe-checkout$/.test(path))
+    (method === "POST" && /^\/api\/public\/invoices\/[^/]+\/create-stripe-checkout$/.test(path)) ||
+    // The customer's invoice page records its first view (token-checked and
+    // rate-limited in invoice-routes.ts).
+    (method === "POST" && /^\/api\/public\/invoices\/[^/]+\/view$/.test(path))
   )
     return true;
   if (
@@ -74,6 +78,13 @@ export const apiAuthenticationBoundary: RequestHandler = (req, res, next) => {
         }
         if (required && !access.features[required]) {
           res.status(403).json({ message: `Approved ${required} access required` });
+          return;
+        }
+        // Fail closed: a path with no feature gate must be explicitly listed
+        // as open to all staff (ALL_STAFF_API_PREFIXES in security.ts).
+        if (!required && !isAllStaffApiPath(path, req.method)) {
+          logger.warn({ method: req.method, path }, "Refused unclassified API path; classify it in security.ts");
+          res.status(403).json({ message: "This endpoint is not available to staff accounts" });
           return;
         }
         return next();

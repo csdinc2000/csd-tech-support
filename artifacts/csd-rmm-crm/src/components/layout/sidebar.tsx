@@ -1,164 +1,29 @@
 import { Link, useLocation } from "wouter";
 import { useEffect, useState } from "react";
-import {
-  LayoutDashboard, Monitor, Ticket, Eye, Settings, BarChart3, Users, CreditCard,
-  Menu, X, Activity, Shield, Zap, Network, TrendingUp, Briefcase, UserCircle,
-  MessageCircle, Bot, Building2, ClipboardList, ChevronDown, LifeBuoy, PhoneCall, FileText, Mail,
-  MapPin, Clock, Wrench, HeadphonesIcon, Sparkles, CalendarDays, Video, Radio, Archive, HeartPulse, Store, Package, GraduationCap, Globe2,
-  Megaphone, Target, Wand2, CheckSquare, Gift, Radar, Timer, BrainCircuit, ClipboardCheck,
-} from "lucide-react";
+import { Menu, X, ChevronDown, LifeBuoy, PhoneCall, MapPin, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAdminAccess, type StaffFeature } from "@/hooks/use-admin-access";
+import { NAV_GROUPS, canAccessRoute, navItemsByGroup, type NavGroupMeta, type NavItem } from "@/app-routes";
 import csdIcon from "@assets/CSD_ICON_Favicon_Logo_1765066839385.png";
 
-type NavItem = {
-  name: string;
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-  badge?: string;
-  adminOnly?: boolean;
-  feature?: StaffFeature;
-  features?: StaffFeature[];
-  // Extra paths that should keep this item highlighted (e.g. sibling sub-views
-  // that live under the same hub tab but have their own URL).
-  match?: string[];
-};
+// Menu entries come from STAFF_ROUTES in app-routes.tsx, the same list that
+// gates the routes, so what's shown here is exactly what the user can open.
+type NavGroup = NavGroupMeta & { items: NavItem[] };
 
-type NavGroup = {
-  id: string;
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  feature: StaffFeature;
-  items: NavItem[];
-};
-
-const navGroups: NavGroup[] = [
-  {
-    id: "dashboard",
-    title: "Dashboard",
-    icon: LayoutDashboard,
-    feature: "dashboard",
-    items: [
-      { name: "Technician Board", href: "/dashboard", icon: LayoutDashboard },
-      { name: "RMM Overview", href: "/dashboard/rmm", icon: Monitor },
-      // Open to any approved staff member — new techs often start with only one feature.
-      { name: "Training Portal", href: "/training", icon: GraduationCap, features: ["dashboard", "crm", "operations", "helpdesk", "communications", "scheduling"] },
-    ],
-  },
-  {
-    id: "customers",
-    title: "Customers & CRM",
-    icon: TrendingUp,
-    feature: "crm",
-    items: [
-      { name: "Customers", href: "/crm/customers", icon: Building2, match: ["/crm", "/clients", "/crm/contacts", "/crm/leads", "/crm/pipeline", "/admin/intakes"] },
-      { name: "Lead Generation Agent", href: "/sales/lead-gen", icon: Radar, match: ["/sales"] },
-      { name: "Speed to Lead", href: "/sales/speed-to-lead", icon: Timer },
-      { name: "Sales Copilot", href: "/sales/copilot", icon: BrainCircuit },
-      { name: "Website Discovery", href: "/website-discovery", icon: Globe2 },
-      { name: "Retained deleted contacts", href: "/crm/retained-contacts", icon: Archive, adminOnly: true },
-      { name: "Jobs & Work Orders", href: "/crm/jobs", icon: Briefcase },
-      { name: "Service Logs", href: "/service-logs", icon: ClipboardList },
-    ],
-  },
-  {
-    id: "marketing",
-    title: "Marketing",
-    icon: Megaphone,
-    feature: "crm",
-    items: [
-      { name: "Marketing Hub", href: "/marketing", icon: Megaphone, match: ["/marketing/channels"] },
-      { name: "Campaigns & Tracking", href: "/marketing/campaigns", icon: Target },
-      { name: "Referral Program", href: "/marketing/referrals", icon: Gift },
-      { name: "Marketing Tools", href: "/marketing/tools", icon: Wand2 },
-      { name: "Marketing Playbook", href: "/marketing/playbook", icon: CheckSquare },
-      { name: "Community Listings", href: "/marketplace", icon: Store, feature: "marketplace" },
-    ],
-  },
-  {
-    id: "communications",
-    title: "Communications",
-    icon: MessageCircle,
-    feature: "communications",
-    items: [
-      { name: "Communications Hub", href: "/comms", icon: MessageCircle, match: ["/messages", "/admin/call-tracking", "/admin/phone", "/comms/voicemails", "/comms/config"] },
-      { name: "Email from Support", href: "/comms/email", icon: Mail },
-      { name: "PTT Dispatch", href: "/ptt", icon: Radio },
-    ],
-  },
-  {
-    id: "scheduling",
-    title: "Scheduling",
-    icon: CalendarDays,
-    feature: "scheduling",
-    items: [
-      { name: "Meetings", href: "/meetings", icon: Video },
-      { name: "Calendar", href: "/calendar-view", icon: CalendarDays },
-      { name: "Calendar Configuration", href: "/scheduling", icon: CalendarDays, match: ["/calendar"], adminOnly: true },
-    ],
-  },
-  {
-    id: "operations",
-    title: "Operations",
-    icon: Wrench,
-    feature: "operations",
-    items: [
-      { name: "Device Management", href: "/devices", icon: Monitor },
-      { name: "Network Discovery", href: "/network-discovery", icon: Network },
-      { name: "Real-Time Monitoring", href: "/monitoring", icon: Activity },
-      { name: "Patch Management", href: "/patches", icon: Shield },
-      { name: "Help Desk", href: "/tickets", icon: Ticket, feature: "helpdesk" },
-      { name: "Remote Access", href: "/remote-access", icon: Eye },
-      { name: "Automation", href: "/automation", icon: Zap, match: ["/automation-hub"], feature: "automation" },
-      { name: "Reports", href: "/reports", icon: BarChart3, feature: "reports" },
-      { name: "Tech Tools", href: "/tech-tools", icon: Wrench },
-      { name: "Calendar", href: "/staff-calendar", icon: CalendarDays },
-    ],
-  },
-  {
-    id: "administration",
-    title: "Administration",
-    icon: HeadphonesIcon,
-    feature: "compliance",
-    items: [
-      { name: "Billing & Plans", href: "/billing", icon: CreditCard, feature: "billing" },
-      { name: "Invoices", href: "/invoices", icon: FileText, feature: "invoices" },
-       { name: "Product & Service Catalog", href: "/invoices/catalog", icon: Package, feature: "invoices", adminOnly: true },
-      { name: "Invoice Settings", href: "/invoices/settings", icon: Settings, feature: "invoices", adminOnly: true },
-      { name: "Compliance Center", href: "/compliance", icon: Shield, feature: "compliance" },
-      { name: "Helpdesk Admin", href: "/helpdesk/admin", icon: HeadphonesIcon, feature: "helpdeskAdmin" },
-      { name: "Staff Administration", href: "/staff", icon: Users, feature: "staffAdmin", match: ["/staff-access", "/dispatch-settings"] },
-      { name: "Provider Health", href: "/provider-health", icon: HeartPulse, adminOnly: true },
-    ],
-  },
-  {
-    id: "ai",
-    title: "AI Tools",
-    icon: Sparkles,
-    feature: "operations",
-    items: [
-      { name: "ARIA Assistant", href: "/aria", icon: Bot },
-      // Personal tasks + daily briefing; open to any approved staff member.
-      { name: "Executive Assistant", href: "/assistant", icon: ClipboardCheck, features: ["dashboard", "crm", "operations", "helpdesk", "communications", "scheduling"] },
-      { name: "ARIA Command Center", href: "/aria-command", icon: Video },
-    ],
-  },
-];
+const NAV_ITEMS = navItemsByGroup();
 
 function isItemActive(item: NavItem, location: string) {
   const { href } = item;
-  // "/dashboard" has its own sub-views (e.g. /dashboard/rmm) so it only matches exactly.
-  if (href === "/dashboard") return location === "/" || location === "/dashboard";
-  // The Marketing hub's other tabs have their own nav items.
-  if (href === "/marketing") return location === href || !!item.match?.includes(location);
+  if (href === "/dashboard" && location === "/") return true;
   if (location === href) return true;
   // Sibling sub-views that share this item's hub tab but carry their own URL.
   if (item.match?.includes(location)) return true;
-  // active for nested routes (e.g. /crm/leads stays active under CRM Dashboard? No — only match exact or sub-route of THIS item)
-  if (href !== "/" && location.startsWith(href + "/")) return true;
+  // Items with their own sub-pages in the menu (dashboard, marketing hub) only
+  // match exactly; others stay active on nested routes like /invoices/42.
+  if (!item.exact && location.startsWith(href + "/")) return true;
   return false;
 }
 
@@ -191,11 +56,6 @@ function NavLink({ item, location, onClick }: { item: NavItem; location: string;
         )}
       />
       <span className="truncate">{item.name}</span>
-      {item.badge && (
-        <span className="ml-auto rounded-full bg-csd-red/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-          {item.badge}
-        </span>
-      )}
     </Link>
   );
 }
@@ -268,14 +128,12 @@ function SidebarBody({
   can: (feature: StaffFeature) => boolean;
   isAdmin: boolean;
 }) {
-  const visibleGroups = navGroups
+  const visibleGroups: NavGroup[] = NAV_GROUPS
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => {
-        if (item.adminOnly && !isAdmin) return false;
-        if (item.features) return item.features.some(f => can(f));
-        return can(item.feature ?? group.feature);
-      }).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+      items: (NAV_ITEMS.get(group.id) ?? [])
+        .filter((item) => canAccessRoute(item.access, { can, isAdmin }))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
     }))
     .filter((group) => group.items.length > 0);
   visibleGroups.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
@@ -342,7 +200,7 @@ function SidebarBody({
 const STORAGE_KEY = "csd:sidebar-groups";
 
 function useGroupState() {
-  const initial: Record<string, boolean> = navGroups.reduce(
+  const initial: Record<string, boolean> = NAV_GROUPS.reduce(
     (acc, g) => ({ ...acc, [g.id]: true }),
     {} as Record<string, boolean>,
   );

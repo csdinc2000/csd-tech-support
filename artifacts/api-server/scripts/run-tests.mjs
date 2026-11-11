@@ -20,7 +20,7 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { build as esbuild } from "esbuild";
+import { build as esbuild, stop as stopEsbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
 
 // 'esbuild-plugin-pino' resolves its dependencies with `require`.
@@ -64,52 +64,67 @@ if (tests.length === 0) {
   process.exit(1);
 }
 
-const outDir = await mkdtemp(path.join(tmpdir(), "api-server-tests-"));
-let status = 1;
-try {
-  await esbuild({
-    entryPoints: tests,
-    platform: "node",
-    bundle: true,
-    format: "esm",
-    outdir: outDir,
-    outExtension: { ".js": ".mjs" },
-    sourcemap: "inline",
-    logLevel: "error",
-    plugins: [esbuildPluginPino({ transports: ["pino-pretty"] })],
-    banner: {
-      js: `import { createRequire as __testCreateRequire } from "node:module";
+// Bundle and run in batches: every test bundle inlines the whole app plus a
+// source map, and bundling all of them in one esbuild call runs the machine
+// out of memory ("The service was stopped").
+const BATCH_SIZE = Number(process.env.API_TEST_BATCH_SIZE || 10);
+
+async function bundleAndRun(batch) {
+  const outDir = await mkdtemp(path.join(tmpdir(), "api-server-tests-"));
+  try {
+    try {
+      await esbuild({
+        entryPoints: batch,
+        platform: "node",
+        bundle: true,
+        format: "esm",
+        outdir: outDir,
+        outExtension: { ".js": ".mjs" },
+        sourcemap: "inline",
+        logLevel: "error",
+        plugins: [esbuildPluginPino({ transports: ["pino-pretty"] })],
+        banner: {
+          js: `import { createRequire as __testCreateRequire } from "node:module";
 import __testPath from "node:path";
 import __testUrl from "node:url";
 globalThis.require = __testCreateRequire(import.meta.url);
 globalThis.__filename = __testUrl.fileURLToPath(import.meta.url);
 globalThis.__dirname = __testPath.dirname(globalThis.__filename);`,
-    },
-  });
+        },
+      });
+    } finally {
+      // Stop the esbuild service so its memory is free while tests run and
+      // the next batch starts with a fresh service.
+      await stopEsbuild();
+    }
 
-  const bundled = tests.map((f) =>
-    path.join(outDir, `${path.basename(f, ".ts")}.mjs`),
-  );
+    for (const file of batch) {
+      console.log(`• ${path.relative(packageDir, file)}`);
+    }
 
-  for (const file of tests) {
-    console.log(`• ${path.relative(packageDir, file)}`);
+    // Serial: several suites bind ports and mutate process.env.
+    return run(process.execPath, [
+      "--test",
+      "--test-concurrency=1",
+      "--enable-source-maps",
+      ...batch.map((f) => path.join(outDir, `${path.basename(f, ".ts")}.mjs`)),
+    ]);
+  } finally {
+    // Clean up before exiting -- `process.exit` would skip this.
+    await rm(outDir, { recursive: true, force: true });
   }
+}
 
-  // Serial: several suites bind ports and mutate process.env.
-  status = run(process.execPath, [
-    "--test",
-    "--test-concurrency=1",
-    "--enable-source-maps",
-    ...bundled,
-  ]);
+// Run every batch, so one failure doesn't hide the state of the rest.
+let status = 0;
+for (let i = 0; i < tests.length; i += BATCH_SIZE) {
+  const batchStatus = await bundleAndRun(tests.slice(i, i + BATCH_SIZE));
+  if (batchStatus !== 0) status = batchStatus;
+}
 
-  if (status === 0 && filters.length === 0) {
-    console.log("• scripts/test-stripe-native-invoice.ts (audit concurrency)");
-    status = run("pnpm", ["run", "test:stripe-document-audit-concurrency"]);
-  }
-} finally {
-  // Clean up before exiting -- `process.exit` would skip this.
-  await rm(outDir, { recursive: true, force: true });
+if (status === 0 && filters.length === 0) {
+  console.log("• scripts/test-stripe-native-invoice.ts (audit concurrency)");
+  status = run("pnpm", ["run", "test:stripe-document-audit-concurrency"]);
 }
 
 process.exit(status);

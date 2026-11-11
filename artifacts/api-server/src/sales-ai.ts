@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, isAnthropicConfigured } from "./anthropic-client";
 import type { z } from "zod/v4";
 import { logger } from "./lib/logger";
 
@@ -15,16 +16,10 @@ export const SALES_AI_MODEL = process.env.SALES_AI_MODEL || "claude-opus-5-5";
 const SALES_AI_EFFORT = (process.env.SALES_AI_EFFORT as "low" | "medium" | "high" | undefined) || "medium";
 const WEB_SEARCH_ENABLED = process.env.SALES_AI_WEB_SEARCH !== "0";
 
-let anthropic: Anthropic | null | undefined;
-function client(): Anthropic | null {
-  if (anthropic !== undefined) return anthropic;
-  const key = process.env.ANTHROPIC_API_KEY;
-  anthropic = key ? new Anthropic({ apiKey: key }) : null;
-  return anthropic;
-}
+const client = getAnthropicClient;
 
 export function isSalesAiConfigured(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+  return isAnthropicConfigured();
 }
 
 export function isSalesWebSearchEnabled(): boolean {

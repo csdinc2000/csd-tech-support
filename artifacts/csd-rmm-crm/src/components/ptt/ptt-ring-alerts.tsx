@@ -90,11 +90,14 @@ export function PttRingAlertsSession({ userId, allowed }: { userId: string | nul
   const ringing = Boolean(ring);
   const secondsLeft = ring ? ringSecondsLeft(ring, incoming.data!.serverTime, incoming.dataUpdatedAt, now) : 0;
 
+  // Tick only while a ring is pending (countdown + stale-data check).
+  const hasRings = allowed && (incoming.data?.rings.length ?? 0) > 0;
   useEffect(() => {
-    if (!allowed) return;
+    if (!hasRings) return;
+    setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [allowed]);
+  }, [hasRings]);
 
   // Sound: browsers only allow audio after the user has interacted with the
   // page, so try, and if blocked ask for one tap ("Tap to hear ringing").

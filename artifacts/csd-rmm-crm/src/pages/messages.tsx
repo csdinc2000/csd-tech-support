@@ -41,6 +41,7 @@ interface BulkSendResult {
 // Tiny UI string table for the static labels around the localized hint.
 // Kept inline so we don't pull in an i18n framework just for two strings.
 import { subscribeA2PLive } from "@/lib/a2p-live";
+import { formatUsPhone } from "@/lib/format";
 const REJECTION_UI_STRINGS: Record<A2pLocale, { learnMore: string; suggest: string }> = {
   en: {
     learnMore: "Learn more",
@@ -1379,9 +1380,7 @@ interface Thread {
 }
 
 function formatPhone(num: string): string {
-  if (!num) return "Unknown";
-  const m = num.match(/^\+?1?(\d{3})(\d{3})(\d{4})$/);
-  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : num;
+  return formatUsPhone(num, "Unknown");
 }
 
 function toE164Display(input: string): string {

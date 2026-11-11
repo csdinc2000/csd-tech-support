@@ -10,11 +10,13 @@ let workerTimer: ReturnType<typeof setInterval> | undefined;
 let processing = false;
 
 function mailboxSettings() {
-  const host = process.env.CSD_MAIL_HOST?.trim();
-  const user = process.env.CSD_MAIL_USER?.trim();
-  const password = process.env.CSD_MAIL_PASSWORD;
+  // The mailbox stays on its own host even when outbound SMTP is pointed at
+  // a relay. IMAP reads its own vars first, falling back to the shared ones.
+  const host = (process.env.CSD_IMAP_HOST || process.env.CSD_MAIL_HOST)?.trim();
+  const user = (process.env.CSD_IMAP_USER || process.env.CSD_MAIL_USER)?.trim();
+  const password = process.env.CSD_IMAP_PASSWORD || process.env.CSD_MAIL_PASSWORD;
   if (!host || !user || !password) return null;
-  const port = Number(process.env.CSD_MAIL_IMAP_PORT || 993);
+  const port = Number(process.env.CSD_IMAP_PORT || process.env.CSD_MAIL_IMAP_PORT || 993);
   return {
     host,
     user,

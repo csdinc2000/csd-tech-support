@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { csdIntakeFormSchema } from "./csd-intake-schema";
+import { csdIntakeFormSchema } from "./csd-intake-schema.ts";
 
 const minimalPhoneSubmission = {
   customerName: "J",

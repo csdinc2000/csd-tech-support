@@ -24,6 +24,14 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
+- App skeleton (read this first):
+  - Server boot: `api-server/src/index.ts` wires middleware in order, then `boot/migrations.ts` (ordered `MIGRATIONS` list; add new ones at the end), `boot/api-routes.ts` (`registerApiRoutes`, every route behind the auth boundary), `boot/workers.ts` (`BACKGROUND_WORKERS`, every recurring job; skipped if its migration failed), `boot/stripe.ts`.
+  - API access: `api-auth-boundary.ts` (public paths) + `security.ts` (`requiredFeatureForApiPath` feature gates, `ALL_STAFF_API_PREFIXES`). The boundary **fails closed**: an `/api` path that is neither public, feature-gated nor listed as all-staff gets 403 (owners pass). `api-route-coverage.integration.test.ts` records every registered route and fails until a new one is classified.
+  - Route modules: feature files export `registerXRoutes(app)`; `routes/routes.ts` still holds the older inline routes (devices, tickets, CRM, intake, Aria, Twilio settings). A2P lives in `routes/a2p-routes.ts`, provider health in `routes/provider-health-routes.ts`, the shared owner check in `routes/owner-auth.ts`.
+  - Shared services: email via `sendEmail` in `helpdesk-email.ts` (SMTP or SendGrid per `EMAIL_PROVIDER`, capacity alerts) — don't call SendGrid/nodemailer directly; staff texts via `/api/sms/send` → `sendTeamReply`; Claude via `anthropic-client.ts`; app-wide operational state (A2P snooze, last A2P submission) in the `app_state` table via `app-state.ts` (never local files — autoscale disks are ephemeral). Route handlers log with `req.log` (set by `middlewares/request-logger.ts`).
+  - Client pages: `csd-rmm-crm/src/app-routes.tsx` (`STAFF_ROUTES`) is the one list of signed-in pages — path, access rule, sidebar entry. `AdminRouter` (App.tsx) and the sidebar are both generated from it. Old/duplicate URLs go in `STAFF_REDIRECTS`.
+  - Client helpers: `src/lib/format.ts` (`formatUsPhone`, `formatUsdCents`). CRM job/lead amounts and appointment totals are cents.
+
 - Technician board (`/dashboard`, three columns: active jobs by status | daily schedule + calendar | service requests + call log; every row opens one shared detail dialog):
   - Client: `artifacts/csd-rmm-crm/src/components/dashboard/tech-board/` (`tech-board.tsx` composes the columns; `detail-dialog.tsx` renders job / appointment / intake / call records). `pages/dashboard.tsx` is a thin wrapper that resolves the `communications` feature for the call log. The previous RMM overview lives on at `/dashboard/rmm` (`pages/rmm-dashboard.tsx`).
   - Server: `GET /api/booking/appointments?from&to&status` in `api-server/src/booking/booking-routes.ts` (staff-only, assignment-scoped, joins the service name). Other columns reuse `/api/crm/jobs`, `/api/intake`, `/api/call-tracking/calls`.
@@ -77,7 +85,7 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Architecture decisions
 
-- One customer-facing number: every staff text (`/api/sms/send`, legacy `/api/call-tracking/sms/send`) goes out from the business line; a `from` tracking number is ignored. Tracking numbers stay for attribution only. Click-to-call already bridges from the main line.
+- One customer-facing number: every staff text (`/api/sms/send`) goes out from the business line; a `from` tracking number is ignored. Tracking numbers stay for attribution only. Click-to-call already bridges from the main line.
 - Reply-by-text relay: forwards to staff cells start with `#<conversationId>`; a forwarding phone texting `#12 message` to the main line relays it to that customer from the main line. It only relays if that phone was sent a forward/mirror for that customer in the last 14 days (`sms_forward_deliveries`), and only when Twilio signatures are verified (same trust rule as staff SMS commands). Texts to/from staff, alert and forwarding phones are internal and never become inbox conversations.
 - Marketplace sellers have no accounts: each listing gets a secret manage link (`/portal/marketplace/manage/<token>`, sha256 hash stored) emailed to the seller — same model as contract signing links. Buyers reach sellers through a relay form; seller email is never exposed publicly.
 - Marketplace photos are stored as `bytea` in Postgres (`marketplace_images`) after client-side resize to 1024px JPEG stepped down in quality (then size, to a 640px floor) until ≤160 KB (`compressPhoto` in `src/lib/marketplace.ts`; 8 per listing max). The sell form has a `capture="environment"` input so phones open the camera directly. Chosen because deployments run on autoscale (ephemeral disk) and no object-storage bucket is configured; move to Replit Object Storage / R2 if the table grows past a few GB.
@@ -104,6 +112,10 @@ _Populate as you build — explicit user instructions worth remembering across s
 ## Gotchas
 
 - Adding a staff feature means touching `staff-access.ts` (server), `use-admin-access.ts`, `staff-access.tsx`, `staff-access-history.ts`, `security.ts` (path gate) and the `features` fixture in `tests/staff-access-concurrency.spec.ts`.
+- OpenAPI (`lib/api-spec`) covers only part of the API. Policy: when you add or change an endpoint, add it to the spec, run codegen, and use the generated hook / `api-zod` types for that caller. Don't hand-write new fetch calls for endpoints that are already in the spec.
+- Adding an API route: classify it in `security.ts` (feature gate or `ALL_STAFF_API_PREFIXES`) or `api-auth-boundary.ts` (public), or staff get 403 and the route-coverage test fails. Adding a staff page: add it to `STAFF_ROUTES` with the same gate.
+- Background polling: the incoming-call and PTT ring alerts poll every 3 s even in background tabs on purpose (rings must reach a hidden tab). Other app-wide polls (access, new leads) only run while the tab is visible.
+- API tests: `node ./scripts/run-tests.mjs [filter...]` bundles and runs in batches of 10 (`API_TEST_BATCH_SIZE`); bundling everything at once runs this machine out of memory.
 - The vite dev server has no `/api` proxy — the Replit router forwards `/api` to port 5000. Browser tests that hit the API must `page.route("**/api/**")` to port 5000 or mock it.
 
 ## Pointers

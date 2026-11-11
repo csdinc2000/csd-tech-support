@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { getAnthropicClient, isAnthropicConfigured } from "./anthropic-client";
 import { logger } from "./lib/logger";
 
 // ---------------------------------------------------------------------------
@@ -301,14 +302,7 @@ Then identify, only when actually visible or unambiguously implied by a printed 
 
 ${JSON_FIELDS}`;
 
-let anthropic: Anthropic | null | undefined;
-
-function client(): Anthropic | null {
-  if (anthropic !== undefined) return anthropic;
-  const key = process.env.ANTHROPIC_API_KEY;
-  anthropic = key ? new Anthropic({ apiKey: key }) : null;
-  return anthropic;
-}
+const client = getAnthropicClient;
 
 // Pull the JSON object out of a response that may carry search citations or
 // stray prose around it. Takes the last balanced {...} in the text.
@@ -414,7 +408,7 @@ export async function lookupHardwareText(query: string, reader: TextReader | nul
 }
 
 export function isVisionConfigured(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+  return isAnthropicConfigured();
 }
 
 // ---------- merge ----------

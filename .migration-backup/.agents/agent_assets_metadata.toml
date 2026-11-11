@@ -1,8 +1,0 @@
-uploads = []
-generated = []
-
-[[outputs]]
-id = "L4gVI_KiknzvymKazFUJy"
-uri = "file://docs/meshcentral-setup.md"
-type = "text"
-title = "MeshCentral VPS Setup Guide"

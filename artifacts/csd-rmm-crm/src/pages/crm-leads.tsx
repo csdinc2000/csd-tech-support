@@ -45,6 +45,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { CrmLead, CrmContact, InsertCrmLead, Service } from "@shared/schema";
 import { format } from "date-fns";
+import { formatUsdCents } from "@/lib/format";
 
 type LeadStatus = 'new' | 'contacted' | 'qualified' | 'quoted' | 'won' | 'lost';
 
@@ -233,13 +234,7 @@ export default function CrmLeads({ embedded = false }: { embedded?: boolean } = 
     return contact?.email || '';
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-    }).format(amount / 100);
-  };
+  const formatCurrency = (amount: number) => formatUsdCents(amount, { wholeDollars: true });
 
   const formatServiceType = (type: string) => {
     if (!type.includes('_')) return type;

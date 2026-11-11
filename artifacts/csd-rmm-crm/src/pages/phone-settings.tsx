@@ -18,6 +18,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import type { TwilioSettings, Voicemail, CallLog } from "@shared/schema";
 import ComplianceNotice from "@/components/compliance-notice";
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
+import { formatUsPhone } from "@/lib/format";
 
 const VOICE_OPTIONS = [
   // Natural-sounding neural voices (recommended) — much smoother and more human.
@@ -667,9 +668,7 @@ function GreetingAudioField() {
 }
 
 function formatPhone(num: string): string {
-  if (!num) return "Unknown";
-  const m = num.match(/^\+1(\d{3})(\d{3})(\d{4})$/);
-  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : num;
+  return formatUsPhone(num, "Unknown");
 }
 
 function statusBadgeVariant(status: string): "default" | "secondary" | "destructive" | "outline" {

@@ -28,7 +28,6 @@ import {
   PRIORITY_TONE,
   contactName,
   formatCents,
-  formatDollars,
   formatDuration,
   formatPhone,
   humanize,
@@ -220,8 +219,8 @@ function JobDetail({ job, contacts }: { job: BoardJob; contacts: ContactIndex })
         <Fact label="Assigned technician" value={job.assignedTo || "Unassigned"} />
         <Fact label="Scheduled" value={when(job.scheduledDateTime)} />
         <Fact label="Created" value={when(job.createdAt)} />
-        <Fact label="Estimate" value={formatDollars(job.estimatedAmount)} />
-        <Fact label="Final amount" value={formatDollars(job.finalAmount)} />
+        <Fact label="Estimate" value={job.estimatedAmount ? formatCents(job.estimatedAmount) : "—"} />
+        <Fact label="Final amount" value={job.finalAmount ? formatCents(job.finalAmount) : "—"} />
       </Facts>
       <Section title="Customer">
         <Facts>

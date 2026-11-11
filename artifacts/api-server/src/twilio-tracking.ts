@@ -460,40 +460,8 @@ export function registerTwilioTracking(app: Express): void {
     catch (e: any) { res.status(500).json({ error: e?.message || "failed" }); }
   });
 
-  app.post("/api/call-tracking/sms/send", async (req, res) => {
-    try {
-      const schema = z.object({
-        to: z.string().min(8),
-        body: z.string().min(1).max(1600),
-        from: z.string().optional(), // accepted for compatibility; always sent from the business line
-      });
-      const { to, body } = schema.parse(req.body);
-      const client = await getTwilioClient();
-      // One central number: customers only ever see the business line, so a
-      // requested tracking-number `from` is ignored.
-      const fromNumber = await getTwilioFromPhoneNumber();
-      if (!fromNumber) {
-        res.status(400).json({ error: "no from number configured" });
-        return;
-      }
-      const msg = await client.messages.create({ to: toE164(to), from: fromNumber, body });
-
-      let trackingId: number | null = null;
-      try {
-        const tn = await getTrackingNumberByPhone(fromNumber);
-        if (tn) trackingId = tn.id;
-      } catch {}
-      await createSmsMessage({
-        messageSid: msg.sid, fromNumber, toNumber: toE164(to), body,
-        direction: "outbound", status: msg.status || "sent", trackingNumberId: trackingId,
-      }).catch(() => {});
-
-      res.status(201).json({ sid: msg.sid, to: msg.to, from: msg.from, status: msg.status });
-    } catch (e: any) {
-      console.error("[sms:send]", e);
-      res.status(400).json({ error: e?.message || "send failed" });
-    }
-  });
+  // Staff texts go through POST /api/sms/send (routes/contact-sms-routes.ts),
+  // which enforces contact assignment and records the sender in the inbox.
 
   // Analytics -------------------------------------------------------------
   app.get("/api/call-tracking/calls", async (req, res) => {

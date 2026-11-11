@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { getAnthropicClient } from './anthropic-client';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { storage } from './storage';
@@ -217,9 +218,9 @@ class AriaService {
   }
 
   private initialize() {
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    if (anthropicKey) {
-      this.anthropicClient = new Anthropic({ apiKey: anthropicKey });
+    const anthropic = getAnthropicClient();
+    if (anthropic) {
+      this.anthropicClient = anthropic;
       this.configuredModels.add('claude');
       console.log('ARIA: Claude (Anthropic) initialized');
     }

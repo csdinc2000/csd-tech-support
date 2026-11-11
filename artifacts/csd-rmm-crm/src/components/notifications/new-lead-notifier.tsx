@@ -1,17 +1,23 @@
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@clerk/react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Sparkles } from "lucide-react";
 import type { CrmLead } from "@shared/schema";
+import { useAdminAccess } from "@/hooks/use-admin-access";
 
-const STORAGE_KEY = "newLeadNotifier:lastSeenId";
-const POLL_INTERVAL_MS = 10_000;
+// Per signed-in user, so on a shared shop PC one person seeing a lead doesn't
+// silence it for the next person.
+const storageKey = (userId: string) => `newLeadNotifier:lastSeenId:${userId}`;
+// Toasts only matter in a visible tab; on refocus the query refetches and any
+// leads that arrived meanwhile are announced together.
+const POLL_INTERVAL_MS = 30_000;
 
-function readLastSeenId() {
+function readLastSeenId(userId: string) {
   try {
-    const value = Number(window.localStorage.getItem(STORAGE_KEY) || "0");
+    const value = Number(window.localStorage.getItem(storageKey(userId)) || "0");
     return Number.isSafeInteger(value) && value >= 0 ? value : 0;
   } catch (error) {
     console.warn("New lead notifier could not read browser storage:", error);
@@ -19,9 +25,9 @@ function readLastSeenId() {
   }
 }
 
-function writeLastSeenId(id: number) {
+function writeLastSeenId(userId: string, id: number) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, String(id));
+    window.localStorage.setItem(storageKey(userId), String(id));
   } catch (error) {
     console.warn("New lead notifier could not update browser storage:", error);
   }
@@ -37,26 +43,33 @@ function formatService(s?: string | null) {
 
 export default function NewLeadNotifier() {
   const { toast } = useToast();
-  const initializedRef = useRef(false);
+  // The user whose baseline has been seeded (reset on account switch).
+  const initializedFor = useRef<string | null>(null);
+
+  const { can, approvalStatus } = useAdminAccess();
+  const { userId } = useAuth();
 
   const { data: leads } = useQuery<CrmLead[]>({
     queryKey: ["/api/crm/leads"],
+    // Staff without CRM access would only get 403s.
+    enabled: Boolean(userId) && approvalStatus === "approved" && can("crm"),
     refetchInterval: POLL_INTERVAL_MS,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     staleTime: 0,
   });
 
   useEffect(() => {
-    if (!leads || leads.length === 0) return;
+    if (!userId || !leads || leads.length === 0) return;
 
     const maxId = leads.reduce((m, l) => (l.id > m ? l.id : m), 0);
-    const stored = readLastSeenId();
+    const stored = readLastSeenId(userId);
 
     // First load: just seed the baseline so we don't toast historical leads.
-    if (!initializedRef.current) {
-      initializedRef.current = true;
+    if (initializedFor.current !== userId) {
+      initializedFor.current = userId;
       if (stored < maxId) {
-        writeLastSeenId(maxId);
+        writeLastSeenId(userId, maxId);
       }
       return;
     }
@@ -99,8 +112,8 @@ export default function NewLeadNotifier() {
       ),
     });
 
-    writeLastSeenId(maxId);
-  }, [leads, toast]);
+    writeLastSeenId(userId, maxId);
+  }, [leads, toast, userId]);
 
   return null;
 }

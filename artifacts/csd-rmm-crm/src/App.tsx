@@ -1,68 +1,28 @@
 import { useEffect, useState } from "react";
-import { Switch, Route, Redirect, useLocation, useSearch, Router as WouterRouter } from "wouter";
+import { Switch, Route, Redirect, useLocation, Router as WouterRouter } from "wouter";
 import { queryClient, synchronizeQueryCacheUser } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ClerkProvider, Show, SignIn, SignUp, useAuth, useClerk } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
 import { shadcn } from "@clerk/themes";
-import { useAdminAccess, type StaffFeature } from "@/hooks/use-admin-access";
+import { useAdminAccess } from "@/hooks/use-admin-access";
+import { STAFF_REDIRECTS, STAFF_ROUTES, canAccessRoute, type RouteAccess } from "@/app-routes";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import ErrorBoundary from "@/components/error-boundary";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
-import Dashboard from "@/pages/dashboard";
-import RmmDashboard from "@/pages/rmm-dashboard";
-import Devices from "@/pages/devices";
-import Tickets from "@/pages/tickets";
-import RemoteAccess from "@/pages/remote-access";
-import AutomationWorkspace from "@/pages/automation-workspace";
-import Monitoring from "@/pages/monitoring";
-import Patches from "@/pages/patches";
-import Reports from "@/pages/reports";
-import NetworkDiscovery from "@/pages/network-discovery";
-import WebsiteDiscovery from "@/pages/website-discovery";
 import CsdIntakePage from "@/pages/csd-intake";
 import WebAppIntakePage from "@/pages/web-app-intake";
 import EmbedPage from "@/pages/embed";
 import PrivacyPage from "@/pages/privacy";
-import CustomersHub from "@/pages/customers-hub";
-import CustomerDetail from "@/pages/customer-detail";
-import PhoneHub from "@/pages/phone-hub";
-import EmailComposePage from "@/pages/email-compose";
-import SchedulingPage from "@/pages/scheduling";
-import StaffMeetingsPage from "@/pages/staff-meetings";
-import StaffCalendarPage from "@/pages/staff-calendar";
-import CrmJobs from "@/pages/crm-jobs";
-import ServiceLogs from "@/pages/service-logs";
-import TechTools from "@/pages/tech-tools";
-import TrainingPortal from "@/pages/training";
-import MyProfilePage from "@/pages/my-profile";
 import BusinessCardPage from "@/pages/business-card";
-import CompliancePage from "@/pages/compliance";
-import AriaPage from "@/pages/aria";
-import ExecutiveAssistantPage from "@/pages/executive-assistant";
-import SalesAgentsPage from "@/pages/sales-agents";
-import AriaMultiCam from "@/pages/aria-multicam";
-import BillingPage from "@/pages/billing";
-import Invoices from "@/pages/invoices";
-import InvoiceSettingsPage from "@/pages/invoice-settings";
-import ImportPaypal from "@/pages/import-paypal";
-import ImportContacts from "@/pages/import-contacts";
-import InvoiceDetail from "@/pages/invoice-detail";
-import CatalogManager from "@/pages/catalog-manager";
 import CatalogOffer from "@/pages/catalog-offer";
-import RetainedDeletedContacts from "@/pages/retained-deleted-contacts";
 import PublicInvoice from "@/pages/public-invoice";
 import PublicContract from "@/pages/public-contract";
-import HelpdeskAdmin from "@/pages/helpdesk-admin";
-import StaffAdminPage from "@/pages/staff-admin";
 import StaffInviteLanding from "@/pages/staff-invite-landing";
 import { apiRequest } from "@/lib/queryClient";
-import ProviderHealthPage from "@/pages/provider-health";
-import PttDispatch from "@/pages/ptt-dispatch";
-import PttAccessoryProbe from "@/pages/ptt-accessory-probe";
 import CustomerPortal from "@/pages/customer-portal";
 import PortalContract from "@/pages/portal-contract";
 import PortalHome from "@/pages/portal-home";
@@ -76,8 +36,6 @@ import MarketplaceBrowse from "@/pages/marketplace-browse";
 import MarketplaceListingPage from "@/pages/marketplace-listing";
 import MarketplaceSellPage from "@/pages/marketplace-sell";
 import MarketplaceManagePage from "@/pages/marketplace-manage";
-import MarketplaceAdminPage from "@/pages/marketplace-admin";
-import MarketingPage from "@/pages/marketing";
 import StaffAria from "@/components/aria/staff-aria";
 import SupportChatWidget from "@/components/aria/support-chat-widget";
 import NewLeadNotifier from "@/components/notifications/new-lead-notifier";
@@ -183,12 +141,6 @@ function safeStaffRedirect(search = window.location.search): string {
   return requested;
 }
 
-function LegacyDispatchSettingsRedirect() {
-  const params = new URLSearchParams(useSearch());
-  params.set("tab", "dispatch");
-  return <Redirect to={`/staff?${params.toString()}`} />;
-}
-
 function SignInPage() {
   const redirectTarget = safeStaffRedirect();
   const signUpUrl = `${basePath}/staff-invite`;
@@ -248,144 +200,45 @@ function Layout({ children }: { children: React.ReactNode }) {
 }
 
 type OwnerAccessOverride = { isOwner: boolean; isLoading: boolean };
+
+// Every signed-in staff page comes from STAFF_ROUTES (app-routes.tsx), the same
+// list the sidebar is built from. `ownerAccessOverride` lets tests render owner
+// pages without a live access API.
 export function AdminRouter({ ownerAccessOverride }: { ownerAccessOverride?: OwnerAccessOverride } = {}) {
   return (
     <Switch>
-      <Route path="/dashboard"><RequireFeature feature="dashboard"><Dashboard /></RequireFeature></Route>
-      <Route path="/dashboard/rmm"><RequireFeature feature="dashboard"><RmmDashboard /></RequireFeature></Route>
-      <Route path="/devices"><RequireFeature feature="operations"><Devices /></RequireFeature></Route>
-      <Route path="/tickets"><RequireFeature feature="helpdesk"><Tickets /></RequireFeature></Route>
-      <Route path="/remote-access"><RequireFeature feature="operations"><RemoteAccess /></RequireFeature></Route>
-      <Route path="/automation"><RequireFeature feature="automation"><AutomationWorkspace /></RequireFeature></Route>
-      <Route path="/monitoring"><RequireFeature feature="operations"><Monitoring /></RequireFeature></Route>
-      <Route path="/patches"><RequireFeature feature="operations"><Patches /></RequireFeature></Route>
-      <Route path="/automation-hub"><RequireFeature feature="automation"><AutomationWorkspace /></RequireFeature></Route>
-      <Route path="/reports"><RequireFeature feature="reports"><Reports /></RequireFeature></Route>
-      <Route path="/network-discovery"><RequireFeature feature="operations"><NetworkDiscovery /></RequireFeature></Route>
-      <Route path="/website-discovery"><RequireFeature feature="crm"><WebsiteDiscovery /></RequireFeature></Route>
-      {/* Sales Agents — Lead Generation Agent / Speed to Lead / Sales Copilot */}
-      <Route path="/sales"><RequireFeature feature="crm"><SalesAgentsPage /></RequireFeature></Route>
-      <Route path="/sales/lead-gen"><RequireFeature feature="crm"><SalesAgentsPage /></RequireFeature></Route>
-      <Route path="/sales/speed-to-lead"><RequireFeature feature="crm"><SalesAgentsPage /></RequireFeature></Route>
-      <Route path="/sales/copilot"><RequireFeature feature="crm"><SalesAgentsPage /></RequireFeature></Route>
-
-      {/* Customers hub — Overview / Leads & Pipeline (Leads + Deals + Intakes) / Contacts / Clients */}
-      <Route path="/crm"><RequireFeature feature="crm"><CustomersHub /></RequireFeature></Route>
-      <Route path="/crm/customers"><RequireFeature feature="crm"><CustomersHub /></RequireFeature></Route>
-      <Route path="/crm/customers/:id"><RequireFeature feature="crm"><CustomerDetail /></RequireFeature></Route>
-      <Route path="/crm/leads"><RequireFeature feature="crm"><CustomersHub /></RequireFeature></Route>
-      <Route path="/crm/pipeline"><RequireFeature feature="crm"><CustomersHub /></RequireFeature></Route>
-      <Route path="/crm/contacts"><RequireFeature feature="crm"><CustomersHub /></RequireFeature></Route>
-      <Route path="/crm/contacts/import"><RequireFeature feature="crm"><ImportContacts /></RequireFeature></Route>
-      <Route path="/clients"><RequireFeature feature="crm"><CustomersHub /></RequireFeature></Route>
-      <Route path="/admin/intakes"><RequireFeature feature="crm"><CustomersHub /></RequireFeature></Route>
-      <Route path="/client-portal">
-        <Redirect to="/portal" />
-      </Route>
-      <Route path="/customer-portal">
-        <Redirect to="/portal" />
-      </Route>
-      <Route path="/crm/jobs"><RequireFeature feature="crm"><CrmJobs /></RequireFeature></Route>
-      <Route path="/crm/retained-contacts">
-        <RequireFeature feature="crm"><RetainedDeletedContacts /></RequireFeature>
-      </Route>
-
-      {/* Phone & Text hub — Messages / Call Tracking / Phone Settings */}
-      <Route path="/comms"><RequireFeature feature="communications"><PhoneHub /></RequireFeature></Route>
-      <Route path="/comms/email"><RequireFeature feature="communications"><EmailComposePage /></RequireFeature></Route>
-      <Route path="/messages"><RequireFeature feature="communications"><PhoneHub /></RequireFeature></Route>
-      <Route path="/admin/call-tracking"><RequireFeature feature="communications"><PhoneHub /></RequireFeature></Route>
-      <Route path="/admin/phone"><RequireFeature feature="communications"><PhoneHub /></RequireFeature></Route>
-      <Route path="/comms/voicemails"><RequireFeature feature="communications"><PhoneHub /></RequireFeature></Route>
-      <Route path="/comms/config"><RequireFeature feature="communications"><PhoneHub /></RequireFeature></Route>
-      <Route path="/ptt/accessory-probe"><RequireFeature feature="communications"><PttAccessoryProbe /></RequireFeature></Route>
-      <Route path="/ptt"><RequireFeature feature="communications"><PttDispatch /></RequireFeature></Route>
-      <Route path="/scheduling">
-        <RequireFeature feature="scheduling"><SchedulingPage /></RequireFeature>
-      </Route>
-      <Route path="/meetings">
-        <RequireFeature feature="scheduling"><StaffMeetingsPage /></RequireFeature>
-      </Route>
-      <Route path="/staff-calendar">
-        <RequireFeature feature="operations"><StaffCalendarPage /></RequireFeature>
-      </Route>
-      <Route path="/calendar-view">
-        <RequireFeature feature="scheduling"><StaffCalendarPage showSettingsLink /></RequireFeature>
-      </Route>
-      <Route path="/calendar">
-        <RequireFeature feature="scheduling"><SchedulingPage /></RequireFeature>
-      </Route>
-
-      <Route path="/service-logs"><RequireFeature feature="operations"><ServiceLogs /></RequireFeature></Route>
-      <Route path="/tech-tools"><RequireFeature feature="operations"><TechTools /></RequireFeature></Route>
-      <Route path="/training" component={TrainingPortal} />
-      <Route path="/profile" component={MyProfilePage} />
-      <Route path="/compliance">
-        <RequireFeature feature="compliance"><CompliancePage /></RequireFeature>
-      </Route>
-      <Route path="/aria" component={AriaPage} />
-      <Route path="/assistant" component={ExecutiveAssistantPage} />
-      <Route path="/aria-command" component={AriaMultiCam} />
-      <Route path="/billing">
-        <RequireFeature feature="billing"><BillingPage /></RequireFeature>
-      </Route>
-      <Route path="/invoices">
-        <RequireFeature feature="invoices"><Invoices /></RequireFeature>
-      </Route>
-      <Route path="/invoices/catalog">
-        <RequireFeature feature="invoices">
-          {ownerAccessOverride
-            ? <OwnerRouteGuard {...ownerAccessOverride}><CatalogManager /></OwnerRouteGuard>
-            : <RequireOwner><CatalogManager /></RequireOwner>}
-        </RequireFeature>
-      </Route>
-      <Route path="/invoices/settings">
-        <RequireFeature feature="invoices">
-          {ownerAccessOverride
-            ? <OwnerRouteGuard {...ownerAccessOverride}><InvoiceSettingsPage /></OwnerRouteGuard>
-            : <RequireOwner><InvoiceSettingsPage /></RequireOwner>}
-        </RequireFeature>
-      </Route>
-      <Route path="/invoices/import-paypal">
-        <RequireFeature feature="invoices"><ImportPaypal /></RequireFeature>
-      </Route>
-      <Route path="/invoices/new">
-        <RequireFeature feature="invoices"><InvoiceDetail /></RequireFeature>
-      </Route>
-      <Route path="/invoices/:id">
-        <RequireFeature feature="invoices"><InvoiceDetail /></RequireFeature>
-      </Route>
-      <Route path="/helpdesk/admin">
-        <RequireFeature feature="helpdeskAdmin"><HelpdeskAdmin /></RequireFeature>
-      </Route>
-      <Route path="/staff">
-        <StaffAdminPage />
-      </Route>
-      <Route path="/dispatch-settings">
-        <LegacyDispatchSettingsRedirect />
-      </Route>
-      <Route path="/staff-access">
-        <Redirect to="/staff?tab=access" />
-      </Route>
-      {/* Marketing hub — Overview / Campaigns / Tools / Playbook / All modules */}
-      <Route path="/marketing"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
-      <Route path="/marketing/campaigns"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
-      <Route path="/marketing/referrals"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
-      <Route path="/marketing/vouchers"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
-      <Route path="/marketing/tools"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
-      <Route path="/marketing/playbook"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
-      <Route path="/marketing/channels"><RequireFeature feature="crm"><MarketingPage /></RequireFeature></Route>
-      <Route path="/marketplace">
-        <RequireFeature feature="marketplace"><MarketplaceAdminPage /></RequireFeature>
-      </Route>
-      <Route path="/provider-health">
-        {ownerAccessOverride
-          ? <OwnerRouteGuard {...ownerAccessOverride}><ProviderHealthPage /></OwnerRouteGuard>
-          : <RequireOwner><ProviderHealthPage /></RequireOwner>}
-      </Route>
+      {STAFF_REDIRECTS.map((redirect) => (
+        <Route key={redirect.path} path={redirect.path}>{redirect.render()}</Route>
+      ))}
+      {STAFF_ROUTES.map((route) => (
+        <Route key={route.path} path={route.path}>
+          <RouteAccessGuard access={route.access} ownerAccessOverride={ownerAccessOverride}>
+            {route.render()}
+          </RouteAccessGuard>
+        </Route>
+      ))}
       <Route component={NotFound} />
     </Switch>
   );
+}
+
+function RouteAccessGuard({
+  access,
+  ownerAccessOverride,
+  children,
+}: {
+  access: RouteAccess;
+  ownerAccessOverride?: OwnerAccessOverride;
+  children: React.ReactNode;
+}) {
+  if (access.kind === "approved") return <>{children}</>;
+  if (access.kind === "owner") {
+    const guarded = ownerAccessOverride
+      ? <OwnerRouteGuard {...ownerAccessOverride}>{children}</OwnerRouteGuard>
+      : <RequireOwner>{children}</RequireOwner>;
+    return access.feature ? <RequireFeature access={{ kind: "feature", feature: access.feature }}>{guarded}</RequireFeature> : guarded;
+  }
+  return <RequireFeature access={access}>{children}</RequireFeature>;
 }
 
 export function OwnerRouteGuard({
@@ -406,7 +259,7 @@ export function OwnerRouteGuard({
         <ShieldAlert className="mx-auto mb-4 h-10 w-10 text-csd-red" />
         <h1 className="text-xl font-semibold">Owner access required</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Provider health settings are available only to account owners.
+          This page is available only to account owners.
         </p>
       </div>
     </div>
@@ -417,11 +270,11 @@ function RequireOwner({ children }: { children: React.ReactNode }) {
   return <OwnerRouteGuard isOwner={isAdmin} isLoading={isLoading}>{children}</OwnerRouteGuard>;
 }
 
-function RequireFeature({ feature, children }: { feature: StaffFeature; children: React.ReactNode }) {
-  const { can, isLoading } = useAdminAccess();
+function RequireFeature({ access, children }: { access: RouteAccess; children: React.ReactNode }) {
+  const { can, isAdmin, isLoading } = useAdminAccess();
 
   if (isLoading) return <div className="p-8 text-sm text-muted-foreground">Checking access…</div>;
-  if (can(feature)) return <>{children}</>;
+  if (canAccessRoute(access, { can, isAdmin })) return <>{children}</>;
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center p-6">

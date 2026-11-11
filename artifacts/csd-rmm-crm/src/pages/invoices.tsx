@@ -19,8 +19,9 @@ import QuickInvoiceSheet from "@/components/invoices/quick-invoice-sheet";
 import { Package } from "lucide-react";
 import { useBillingParties, useInvoices, type BillingParty, type Invoice, type InvoiceStatus } from "@/hooks/use-invoices";
 import { useAdminAccess } from "@/hooks/use-admin-access";
+import { formatUsdCents } from "@/lib/format";
 
-const money = (cents: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+const money = (cents: number) => formatUsdCents(cents);
 
 const today = () => new Date(new Date().setHours(0, 0, 0, 0));
 

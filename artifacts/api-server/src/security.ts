@@ -136,13 +136,32 @@ export function requiredFeatureForApiPath(path: string, method = "GET"): StaffFe
     return verb === "GET" ? "invoices" : "owner";
   }
   if (path === "/api/meshcentral" || path.startsWith("/api/meshcentral/")) return "operations";
+  // RMM and technician tools: each is used only by an operations-gated page.
+  const underAny = (prefixes: string[]) =>
+    prefixes.some((prefix) => path === prefix || path.startsWith(prefix + "/"));
+  if (underAny([
+    "/api/patches", "/api/patch-policies", "/api/network-scans", "/api/network",
+    "/api/monitoring", "/api/tech-tools", "/api/emergency-contacts",
+  ])) return "operations";
+  if (underAny(["/api/automation-scripts"])) return "automation";
+  // Bulk imports and the Google Contacts sync live on CRM / invoice pages.
+  if (underAny(["/api/contact-import", "/api/google", "/api/service-contracts"])) return "crm";
+  if (underAny(["/api/paypal-import"])) return "invoices";
+  if (underAny(["/api/ptt/session", "/api/ptt/telemetry"])) return "communications";
+  // Inbound-email ticket creation has no webhook signature; keep it to admins.
+  if (path === "/api/helpdesk/email/inbound" || path === "/api/helpdesk/reports/summary") return "helpdeskAdmin";
   if (path === "/api/calendar" || path.startsWith("/api/calendar/")) return "scheduling";
   if (verb === "GET" && (path === "/api/staff-dispatch/audit" || path === "/api/staff-dispatch/client-messages")) return "owner";
   if (path === "/api/staff-dispatch/settings" || path.startsWith("/api/staff-dispatch/settings/")) return "owner";
   if (path === "/api/staff-dispatch" || path.startsWith("/api/staff-dispatch/")) return "dispatchAdmin";
   if (path === "/api/call-tracking" || path.startsWith("/api/call-tracking/")) return "communications";
   if (path === "/api/ptt/roster" || path === "/api/ptt/pages" || path.startsWith("/api/ptt/pages/")) return "communications";
-  if (path === "/api/sms/inbox" || path.startsWith("/api/sms/inbox/")) return "communications";
+  // Every SMS endpoint reads or changes customer conversations, so it needs
+  // communications. The one exception is sending a single text: the digital
+  // business card lets any approved staff member text their card, and the
+  // send route enforces contact assignment itself.
+  if (path === "/api/sms/send" && verb === "POST") return null; // see ALL_STAFF_API_PREFIXES
+  if (path === "/api/sms" || path.startsWith("/api/sms/")) return "communications";
   if (path === "/api/communications" || path.startsWith("/api/communications/")) return "communications";
   // Call/SMS forwarding and the main-line setup decide where customer calls go;
   // only the owner changes them (the UI already hides "Main Line Setup").
@@ -161,6 +180,58 @@ export function requiredFeatureForApiPath(path: string, method = "GET"): StaffFe
     isSensitiveHelpdeskRead
   ) return "helpdeskAdmin";
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// API areas open to every approved staff member
+// ---------------------------------------------------------------------------
+// The auth boundary FAILS CLOSED: a signed-in, approved staff member may only
+// reach an /api path that is public, gated by requiredFeatureForApiPath above,
+// or listed here. A new route that matches none of them gets a 403 (owners
+// still pass), and api-route-coverage.integration.test.ts fails until it is
+// classified. Add a prefix here only when every approved staff member really
+// should reach it; otherwise give it a feature gate above.
+export const ALL_STAFF_API_PREFIXES: readonly { prefix: string; methods?: readonly string[] }[] = [
+  // Shared work surfaces: the dashboard, tech board, ticket and alert widgets
+  // show these to every role. Rows are still assignment-scoped by
+  // enforceAssignedResourceBoundary and the route handlers.
+  { prefix: "/api/dashboard" },
+  { prefix: "/api/tickets" },
+  { prefix: "/api/devices" },
+  { prefix: "/api/alerts" },
+  { prefix: "/api/remote-sessions" },
+  { prefix: "/api/support/generate-code", methods: ["POST"] },
+  { prefix: "/api/service-logs" },
+  { prefix: "/api/intake" },
+  { prefix: "/api/booking/appointments", methods: ["GET"] },
+  { prefix: "/api/users", methods: ["GET"] },
+  // Ticket forms need helpdesk lookup data; changing it is helpdeskAdmin.
+  { prefix: "/api/helpdesk/departments", methods: ["GET"] },
+  { prefix: "/api/helpdesk/teams", methods: ["GET"] },
+  { prefix: "/api/helpdesk/help-topics", methods: ["GET"] },
+  { prefix: "/api/helpdesk/sla-plans", methods: ["GET"] },
+  { prefix: "/api/helpdesk/canned-responses", methods: ["GET"] },
+  // Every staff member listens to and clears their own voicemail.
+  { prefix: "/api/twilio/voicemails", methods: ["GET", "PATCH"] },
+  // Personal tools: own profile/card/avatar, own Aria conversations, own
+  // assistant tasks, own calendar.
+  { prefix: "/api/staff-profile" },
+  { prefix: "/api/aria" },
+  { prefix: "/api/assistant" },
+  { prefix: "/api/staff-calendar" },
+  // Texting one customer (the business card "text my card" button); the route
+  // enforces contact assignment.
+  { prefix: "/api/sms/send", methods: ["POST"] },
+];
+
+export function isAllStaffApiPath(path: string, method = "GET"): boolean {
+  const p = path.toLowerCase();
+  // Express answers HEAD with the GET route.
+  const verb = method.toUpperCase() === "HEAD" ? "GET" : method.toUpperCase();
+  return ALL_STAFF_API_PREFIXES.some(
+    ({ prefix, methods }) =>
+      (p === prefix || p.startsWith(prefix + "/")) && (!methods || methods.includes(verb)),
+  );
 }
 
 // ---------------------------------------------------------------------------

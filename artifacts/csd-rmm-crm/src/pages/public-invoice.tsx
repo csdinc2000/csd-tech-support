@@ -3,9 +3,9 @@ import { useParams } from "wouter";
 import { Check, ChevronRight, CreditCard, Download, ExternalLink, LockKeyhole, ShieldCheck } from "lucide-react";
 import csdLogo from "@assets/cropped-CSD-Logo-New_2_1765066834661.png";
 import { usePublicInvoice, usePublicStripeCheckout } from "@/hooks/use-invoices";
+import { formatUsdCents } from "@/lib/format";
 
-const money = (cents: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+const money = (cents: number) => formatUsdCents(cents);
 
 const dateLabel = (date?: string | null) =>
   date

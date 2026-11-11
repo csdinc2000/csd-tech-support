@@ -17,6 +17,7 @@ import { CallViaCsdButton } from "@/components/communications/call-via-csd-butto
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { formatUsPhone } from "@/lib/format";
 
 /** What customers see on every text and call from the team. */
 export const MAIN_LINE_DISPLAY = "(954) 637-7300";
@@ -71,8 +72,7 @@ const MISSED_CALL_STATUSES = new Set(["no-answer", "busy", "failed", "canceled"]
 const UNASSIGNED = "__unassigned__";
 
 export function formatPhone(num: string): string {
-  const digits = num.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
-  return digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : num;
+  return formatUsPhone(num, num);
 }
 
 /** Same key the server uses: digits without the US leading 1. */

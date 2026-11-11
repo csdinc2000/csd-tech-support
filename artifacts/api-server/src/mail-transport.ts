@@ -15,11 +15,14 @@ let smtpTransport: Transporter | undefined;
 let smtpTransportKey = "";
 
 function smtpSettings() {
-  const host = process.env.CSD_MAIL_HOST?.trim();
-  const user = process.env.CSD_MAIL_USER?.trim();
-  const password = process.env.CSD_MAIL_PASSWORD;
+  // Sending and receiving can live on different providers (for example an
+  // SMTP relay for outbound while the cPanel mailbox still serves IMAP), so
+  // the SMTP side reads its own vars first and falls back to the shared ones.
+  const host = (process.env.CSD_SMTP_HOST || process.env.CSD_MAIL_HOST)?.trim();
+  const user = (process.env.CSD_SMTP_USER || process.env.CSD_MAIL_USER)?.trim();
+  const password = process.env.CSD_SMTP_PASSWORD || process.env.CSD_MAIL_PASSWORD;
   if (!host || !user || !password) return null;
-  const port = Number(process.env.CSD_MAIL_SMTP_PORT || process.env.CSD_MAIL_PORT || 465);
+  const port = Number(process.env.CSD_SMTP_PORT || process.env.CSD_MAIL_SMTP_PORT || process.env.CSD_MAIL_PORT || 465);
   return {
     host,
     user,

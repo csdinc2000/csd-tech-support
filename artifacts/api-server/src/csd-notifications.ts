@@ -1,9 +1,12 @@
-import sgMail from '@sendgrid/mail';
 import type { CsdIntakeRecord } from '@workspace/db';
+import { logger } from './lib/logger';
 
-// Configure SendGrid
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+// All mail goes through sendEmail (helpdesk-email.ts): SMTP or SendGrid per
+// EMAIL_PROVIDER, with provider-capacity alerts. Imported lazily so the pure
+// email builders below stay testable without loading storage.
+async function sendEmail(...args: Parameters<typeof import('./helpdesk-email').sendEmail>) {
+  const { sendEmail: send } = await import('./helpdesk-email');
+  return send(...args);
 }
 
 const ADMIN_EMAIL = process.env.CSD_ADMIN_EMAIL || 'support@computersystemsdepot.com';
@@ -16,7 +19,6 @@ const FROM_NAME =
   process.env.CSD_FROM_NAME ||
   'Computer Systems Depot';
 
-const FROM_ADDRESS = { email: FROM_EMAIL, name: FROM_NAME };
 
 function appBaseUrl(): string {
   const domains = process.env.REPLIT_DOMAINS;
@@ -40,11 +42,6 @@ function escapeHtml(s: string): string {
  * Send email notification when new intake is submitted
  */
 export async function sendIntakeNotificationEmail(intake: CsdIntakeRecord): Promise<void> {
-  if (!process.env.SENDGRID_API_KEY) {
-    console.log('SendGrid not configured - intake notification email not sent');
-    return;
-  }
-
   try {
     const serviceTypeDisplay = intake.serviceType === 'Other' 
       ? intake.serviceTypeOther || 'Other Service'
@@ -86,19 +83,21 @@ ${intake.referrerUrl ? `• Referrer: ${intake.referrerUrl}` : ''}
 View details: ${appBaseUrl()}/admin/intakes
     `.trim();
 
-    const msg = {
-      to: ADMIN_EMAIL,
-      from: FROM_ADDRESS,
-      replyTo: ADMIN_EMAIL,
-      subject: `New Service Request: ${intake.customerName} - ${serviceTypeDisplay}`,
-      text: emailContent,
-      html: escapeHtml(emailContent).replace(/\n/g, '<br>')
-    };
-
-    await sgMail.send(msg);
-    console.log(`Intake notification email sent for intake #${intake.id}`);
+    await sendEmail(
+      ADMIN_EMAIL,
+      `New Service Request: ${intake.customerName} - ${serviceTypeDisplay}`,
+      emailContent,
+      {
+        html: escapeHtml(emailContent).replace(/\n/g, '<br>'),
+        from: FROM_EMAIL,
+        fromName: FROM_NAME,
+        replyTo: ADMIN_EMAIL,
+        operation: 'intake',
+      },
+    );
+    logger.info({ intakeId: intake.id }, 'Intake notification email sent');
   } catch (error) {
-    console.error('Failed to send intake notification email:', error);
+    logger.error({ err: error, intakeId: intake.id }, 'Failed to send intake notification email');
     // Don't throw - we don't want email failures to break intake submission
   }
 }
@@ -164,22 +163,13 @@ export async function sendCustomerConfirmationEmail(
   if (!intake.emailAddress) return;
   try {
     const email = buildCustomerConfirmationEmail(intake, details);
-    const { sendEmail } = await import('./helpdesk-email');
     await sendEmail(intake.emailAddress, email.subject, email.text, {
       html: email.html,
       replyTo: ADMIN_EMAIL,
+      operation: 'intake',
     });
-    console.log(`Customer confirmation email sent for intake #${intake.id}`);
+    logger.info({ intakeId: intake.id }, 'Customer confirmation email sent');
   } catch (error) {
-    console.error('Failed to send customer confirmation email:', error);
+    logger.error({ err: error, intakeId: intake.id }, 'Failed to send customer confirmation email');
   }
-}
-
-/**
- * Send SMS notification (for future Twilio integration)
- */
-export async function sendIntakeSmsNotification(intake: CsdIntakeRecord): Promise<void> {
-  // Placeholder for Twilio SMS integration
-  // This can be implemented when SMS notifications are needed
-  console.log(`SMS notification would be sent for intake #${intake.id}`);
 }

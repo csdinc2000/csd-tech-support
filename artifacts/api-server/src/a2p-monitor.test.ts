@@ -1,18 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import test from "node:test";
+import type { MonitorState } from "./a2p-monitor";
 
 test("retries both notification channels when neither delivery succeeds", async () => {
-  const originalCwd = process.cwd();
   const originalEnv = {
     A2P_ALERT_EMAIL: process.env.A2P_ALERT_EMAIL,
     SENDGRID_API_KEY: process.env.SENDGRID_API_KEY,
   };
-  const workingDirectory = await mkdtemp(path.join(tmpdir(), "a2p-monitor-test-"));
-
-  process.chdir(workingDirectory);
   process.env.A2P_ALERT_EMAIL = "owner@example.com";
   process.env.SENDGRID_API_KEY = "SG.test-key";
 
@@ -20,8 +14,20 @@ test("retries both notification channels when neither delivery succeeds", async 
   let alertAttempts = 0;
   let emailAttempts = 0;
   let updatedAlertId: number | null = null;
+  // In-memory stand-in for the app_state table.
+  let savedState: MonitorState | null = null;
+  const currentState = (): MonitorState => {
+    assert.ok(savedState, "monitor should have saved its state");
+    return savedState;
+  };
 
   monitor.__setA2PMonitorDepsForTests({
+    stateStore: {
+      load: async () => savedState,
+      save: async (state) => {
+        savedState = structuredClone(state);
+      },
+    },
     getA2PStatus: async () => ({
       configured: true,
       status: "rejected",
@@ -39,22 +45,16 @@ test("retries both notification channels when neither delivery succeeds", async 
         throw new Error("database unavailable");
       },
     } as never,
-    sgMail: {
-      send: async () => {
-        emailAttempts += 1;
-        throw new Error("email unavailable");
-      },
-    } as never,
+    sendEmail: async () => {
+      emailAttempts += 1;
+      throw new Error("email unavailable");
+    },
   });
 
   try {
     await monitor.runA2PMonitorOnce();
 
-    const statePath = path.join(workingDirectory, ".local", "a2p-monitor-state.json");
-    const firstState = JSON.parse(await readFile(statePath, "utf8")) as {
-      lastAlertAt: string | null;
-      lastAlertKind: string | null;
-    };
+    const firstState = currentState();
     assert.equal(firstState.lastAlertAt, null);
     assert.equal(firstState.lastAlertKind, null);
     assert.equal(alertAttempts, 1);
@@ -62,10 +62,7 @@ test("retries both notification channels when neither delivery succeeds", async 
 
     await monitor.runA2PMonitorOnce();
 
-    const secondState = JSON.parse(await readFile(statePath, "utf8")) as {
-      lastAlertAt: string | null;
-      lastAlertKind: string | null;
-    };
+    const secondState = currentState();
     assert.equal(secondState.lastAlertAt, null);
     assert.equal(secondState.lastAlertKind, null);
     assert.equal(alertAttempts, 2);
@@ -96,7 +93,7 @@ test("retries both notification channels when neither delivery succeeds", async 
           throw new Error("must reuse the existing A2P incident");
         },
       } as never,
-      sgMail: { send: async () => undefined } as never,
+      sendEmail: async () => undefined,
     });
     await monitor.runA2PMonitorOnce();
     assert.equal(updatedAlertId, 42);
@@ -124,17 +121,15 @@ test("retries both notification channels when neither delivery succeeds", async 
           return undefined;
         },
       } as never,
-      sgMail: { send: async () => undefined } as never,
+      sendEmail: async () => undefined,
     });
     await monitor.runA2PMonitorOnce();
     assert.equal(updatedAlertId, 42);
   } finally {
     monitor.__setA2PMonitorDepsForTests(null);
-    process.chdir(originalCwd);
     if (originalEnv.A2P_ALERT_EMAIL === undefined) delete process.env.A2P_ALERT_EMAIL;
     else process.env.A2P_ALERT_EMAIL = originalEnv.A2P_ALERT_EMAIL;
     if (originalEnv.SENDGRID_API_KEY === undefined) delete process.env.SENDGRID_API_KEY;
     else process.env.SENDGRID_API_KEY = originalEnv.SENDGRID_API_KEY;
-    await rm(workingDirectory, { recursive: true, force: true });
   }
 });

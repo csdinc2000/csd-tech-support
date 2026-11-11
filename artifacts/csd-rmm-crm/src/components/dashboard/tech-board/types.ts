@@ -1,5 +1,6 @@
 import type { CrmJob, CrmContact, CsdIntakeRecord } from "@shared/schema";
 import type { Appointment } from "@shared/booking";
+import { formatUsPhone, formatUsdCentsOr } from "@/lib/format";
 
 // `/api/crm/jobs` decorates each job with the account resolved through its contact.
 export type BoardJob = CrmJob & { clientId?: number | null };
@@ -95,11 +96,7 @@ export function humanize(value: string | null | undefined): string {
 }
 
 export function formatPhone(value: string | null | undefined): string {
-  if (!value) return "—";
-  const digits = value.replace(/\D/g, "");
-  const local = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
-  if (local.length === 10) return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`;
-  return value;
+  return formatUsPhone(value, "—");
 }
 
 export function formatDuration(seconds: number | null | undefined): string {
@@ -109,16 +106,9 @@ export function formatDuration(seconds: number | null | undefined): string {
   return minutes ? `${minutes}m ${rest}s` : `${rest}s`;
 }
 
-/** Appointment amounts are stored in cents. */
+/** Appointment and CRM job amounts are both stored in cents. */
 export function formatCents(cents: number | null | undefined): string {
-  if (cents == null) return "—";
-  return (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
-
-/** CRM job amounts are whole dollars (see pages/crm-jobs.tsx). */
-export function formatDollars(amount: number | null | undefined): string {
-  if (!amount) return "—";
-  return amount.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 });
+  return formatUsdCentsOr(cents);
 }
 
 export function contactName(contacts: ContactIndex, contactId: number | null | undefined): string {

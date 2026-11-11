@@ -46,6 +46,7 @@ import { useToast } from "@/hooks/use-toast";
 import { CrmJob, CrmContact, InsertCrmJob } from "@shared/schema";
 import { Link } from "wouter";
 import { format } from "date-fns";
+import { formatUsdCents } from "@/lib/format";
 
 /** YYYY-MM-DD in the browser's time zone. */
 const localDay = (date: Date) =>
@@ -219,13 +220,7 @@ export default function CrmJobs() {
     return <span>{contact.fullName}</span>;
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-    }).format(amount / 100);
-  };
+  const formatCurrency = (amount: number) => formatUsdCents(amount, { wholeDollars: true });
 
   const formatServiceType = (type: string) => {
     return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');

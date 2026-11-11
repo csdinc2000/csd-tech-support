@@ -8,7 +8,7 @@
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts && node scripts/prerender-seo.mjs",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
-    "test": "node --experimental-strip-types --test src/pages/meeting-onboarding-status.test.ts src/pages/staff-access-history.test.ts src/pages/staff-dispatch-handoff.test.ts src/pages/provider-health-history-range.test.ts src/lib/windows-specs.test.ts src/lib/voice-intake.test.ts src/lib/marketing.test.ts && playwright test --config playwright.config.ts",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\" && playwright test --config playwright.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

@@ -1,34 +1,53 @@
-import { promises as fs } from "fs";
-import path from "path";
-import sgMail from "@sendgrid/mail";
 import { storage } from "./storage";
 import { getA2PStatus, collectFailureReasons, type A2PStatus, type A2PStatusResult } from "./a2p-status";
 import { publishA2PStatusChange, fingerprintA2PResult } from "./a2p-events";
+import { getAppStateWithLegacyFile, setAppState } from "./app-state";
+import { isSmtpConfigured } from "./mail-transport";
 
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-}
+type OwnerEmailSender = (to: string, subject: string, body: string) => Promise<unknown>;
+// Same delivery path as every other app email (SMTP or SendGrid, with
+// capacity alerts). Loaded lazily to keep this module light for tests.
+const sendOwnerEmailViaApp: OwnerEmailSender = async (to, subject, body) => {
+  const { sendEmail } = await import("./helpdesk-email");
+  return sendEmail(to, subject, body, {
+    html: body.replace(/\n/g, "<br>"),
+    fromName: process.env.MAIL_FROM_NAME || process.env.CSD_FROM_NAME || "RMM Platform",
+  });
+};
 
 // Test seam: allow tests to swap out the Twilio status fetcher, the storage
 // singleton, and the SendGrid client without touching prod call sites. In
 // production these always reference the real imports above.
+// Monitor state lives in the shared app_state table (see app-state.ts) so a
+// snooze or cooldown survives restarts and applies to every instance.
+const STATE_KEY = "a2p-monitor";
+const LEGACY_STATE_FILE = "a2p-monitor-state.json";
+export interface A2PMonitorStateStore {
+  load(): Promise<Partial<MonitorState> | null>;
+  save(state: MonitorState): Promise<void>;
+}
+const appStateStore: A2PMonitorStateStore = {
+  load: () => getAppStateWithLegacyFile<Partial<MonitorState>>(STATE_KEY, LEGACY_STATE_FILE),
+  save: (state) => setAppState(STATE_KEY, state),
+};
 interface MonitorDeps {
   getA2PStatus: typeof getA2PStatus;
   storage: typeof storage;
-  sgMail: typeof sgMail;
+  sendEmail: OwnerEmailSender;
+  stateStore: A2PMonitorStateStore;
 }
-const deps: MonitorDeps = { getA2PStatus, storage, sgMail };
+const deps: MonitorDeps = { getA2PStatus, storage, sendEmail: sendOwnerEmailViaApp, stateStore: appStateStore };
 export function __setA2PMonitorDepsForTests(overrides: Partial<MonitorDeps> | null): void {
   if (!overrides) {
     deps.getA2PStatus = getA2PStatus;
     deps.storage = storage;
-    deps.sgMail = sgMail;
+    deps.sendEmail = sendOwnerEmailViaApp;
+    deps.stateStore = appStateStore;
     return;
   }
   Object.assign(deps, overrides);
 }
 
-const STATE_FILE = path.join(process.cwd(), ".local", "a2p-monitor-state.json");
 const DEFAULT_INTERVAL_MS = 60 * 60 * 1000; // hourly
 // Don't re-page the owner more than once a day for the same persistent
 // rejection. Twilio reviews can take 24-48h, so spamming is unhelpful.
@@ -39,7 +58,7 @@ const LOOKUP_FAILURE_THRESHOLD = 2;
 
 type AlertKind = "rejected" | "lookup_failed";
 
-interface MonitorState {
+export interface MonitorState {
   lastStatus: A2PStatus | null;
   lastAlertAt: string | null;
   lastAlertKind: AlertKind | null;
@@ -70,8 +89,8 @@ const EMPTY_STATE: MonitorState = {
 
 async function loadState(): Promise<MonitorState> {
   try {
-    const raw = await fs.readFile(STATE_FILE, "utf8");
-    const parsed = JSON.parse(raw) as Partial<MonitorState>;
+    const parsed = await deps.stateStore.load();
+    if (!parsed) return { ...EMPTY_STATE };
     return {
       lastStatus: (parsed.lastStatus as A2PStatus) || null,
       lastAlertAt: parsed.lastAlertAt || null,
@@ -162,8 +181,7 @@ export async function clearA2PSnooze(): Promise<A2PSnoozeStatus> {
 
 async function saveState(state: MonitorState): Promise<void> {
   try {
-    await fs.mkdir(path.dirname(STATE_FILE), { recursive: true });
-    await fs.writeFile(STATE_FILE, JSON.stringify(state, null, 2), "utf8");
+    await deps.stateStore.save(state);
   } catch (err) {
     console.error("[a2p-monitor] failed to persist state:", (err as Error)?.message);
   }
@@ -192,22 +210,12 @@ async function sendOwnerEmail(subject: string, body: string): Promise<boolean> {
     console.log("[a2p-monitor] no owner email configured; skipping email notification");
     return false;
   }
-  if (!process.env.SENDGRID_API_KEY) {
-    console.log(`[a2p-monitor] SendGrid not configured — would email ${to}: ${subject}`);
+  if (!process.env.SENDGRID_API_KEY && !isSmtpConfigured()) {
+    console.log(`[a2p-monitor] email not configured — would email ${to}: ${subject}`);
     return false;
   }
-  const from = {
-    email: process.env.MAIL_FROM || process.env.CSD_FROM_EMAIL || "no-reply@csdpro.com",
-    name: process.env.MAIL_FROM_NAME || process.env.CSD_FROM_NAME || "RMM Platform",
-  };
   try {
-    await deps.sgMail.send({
-      to,
-      from,
-      subject,
-      text: body,
-      html: body.replace(/\n/g, "<br>"),
-    });
+    await deps.sendEmail(to, subject, body);
     return true;
   } catch (err) {
     console.error("[a2p-monitor] email send failed:", (err as Error)?.message);
