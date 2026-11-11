@@ -90,3 +90,39 @@ export function mapWhatCmsResponse(data: any) {
     message: null,
   };
 }
+
+const MILES_PER_DEGREE_LAT = 69;
+
+/** "south,west,north,east" box around a point, for Overpass `[bbox:...]`. */
+export function boundingBox(lat: number, lon: number, radiusMiles: number): string {
+  const dLat = radiusMiles / MILES_PER_DEGREE_LAT;
+  const dLon = radiusMiles / (MILES_PER_DEGREE_LAT * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
+  return [lat - dLat, lon - dLon, lat + dLat, lon + dLon].map((n) => n.toFixed(5)).join(",");
+}
+
+/**
+ * One bounding-box query for repair / electronics / IT businesses. Far cheaper
+ * for the public Overpass servers than per-tag `around` searches with regexes;
+ * the website requirement is applied to the results instead of in the query.
+ */
+export function overpassBusinessQuery(lat: number, lon: number, radiusMiles: number): string {
+  return `[out:json][timeout:25][bbox:${boundingBox(lat, lon, radiusMiles)}];
+(
+  nwr["name"]["craft"="computer_repair"];
+  nwr["name"]["shop"~"^(computer|electronics|mobile_phone)$"];
+  nwr["name"]["office"="it"];
+);
+out center tags;`;
+}
+
+/** Overloaded / unreachable Overpass responses worth trying another server for. */
+export function isRetryableOverpassFailure(error: any): boolean {
+  const status = Number(error?.response?.status);
+  if ([429, 502, 503, 504].includes(status)) return true;
+  return ["ECONNABORTED", "ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"].includes(error?.code);
+}
+
+/** Cache key for a search: ~100 m grid cell plus radius. */
+export function osmSearchCacheKey(lat: number, lon: number, radiusMiles: number): string {
+  return `osm-discovery:${lat.toFixed(3)},${lon.toFixed(3)}:${radiusMiles}`;
+}

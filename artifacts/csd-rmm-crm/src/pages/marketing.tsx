@@ -18,6 +18,7 @@ import { MarketingPlaybook } from "@/components/marketing/marketing-playbook";
 import { MarketingChannels } from "@/components/marketing/marketing-channels";
 import { MarketingReferrals } from "@/components/marketing/marketing-referrals";
 import { MarketingVouchers } from "@/components/marketing/marketing-vouchers";
+import { MarketingPortalAds } from "@/components/marketing/marketing-portal-ads";
 
 /**
  * Marketing hub — one home for the marketing department:
@@ -28,12 +29,13 @@ import { MarketingVouchers } from "@/components/marketing/marketing-vouchers";
  *   /marketing/tools      Review requests, content studio, tracked links, brand kit (?tool=)
  *   /marketing/playbook   Weekly / monthly routine
  *   /marketing/channels   Every existing module marketing works from
+ *   /marketing/portal-ads Popup ads on the customer portal (opened from All modules)
  *
  * Everything is computed from data the CRM already records (leads, intakes,
  * jobs, call tracking); nothing here sends a message on its own.
  */
 
-type HubTab = "overview" | "campaigns" | "referrals" | "vouchers" | "tools" | "playbook" | "channels";
+type HubTab = "overview" | "campaigns" | "referrals" | "vouchers" | "tools" | "playbook" | "channels" | "portal-ads";
 
 const TABS: { id: HubTab; label: string; path: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "overview", label: "Overview", path: "/marketing", icon: LayoutDashboard },
@@ -43,6 +45,11 @@ const TABS: { id: HubTab; label: string; path: string; icon: React.ComponentType
   { id: "tools", label: "Tools", path: "/marketing/tools", icon: Wand2 },
   { id: "playbook", label: "Playbook", path: "/marketing/playbook", icon: CheckSquare },
   { id: "channels", label: "All modules", path: "/marketing/channels", icon: LayoutGrid },
+];
+
+// Modules with their own URL that live under "All modules" rather than the tab bar.
+const MODULE_VIEWS: { id: HubTab; path: string; parent: HubTab }[] = [
+  { id: "portal-ads", path: "/marketing/portal-ads", parent: "channels" },
 ];
 
 const RANGES = [30, 90, 365] as const;
@@ -71,7 +78,9 @@ export function MarketingHubView({
 }) {
   const [location, setLocation] = useLocation();
   const search = useSearch();
-  const tab = TABS.find((t) => t.path === location)?.id ?? "overview";
+  const moduleView = MODULE_VIEWS.find((view) => view.path === location);
+  const tab: HubTab = moduleView?.id ?? TABS.find((t) => t.path === location)?.id ?? "overview";
+  const activeTab = moduleView?.parent ?? tab;
   const toolParam = new URLSearchParams(search).get("tool");
   const tool: MarketingTool = isMarketingTool(toolParam) ? toolParam : "reviews";
   const [days, setDays] = useState<number>(30);
@@ -133,7 +142,7 @@ export function MarketingHubView({
           >
             {TABS.map((item) => {
               const Icon = item.icon;
-              const active = item.id === tab;
+              const active = item.id === activeTab;
               return (
                 <button
                   key={item.id}
@@ -201,6 +210,7 @@ export function MarketingHubView({
         )}
         {tab === "playbook" && <MarketingPlaybook storagePrefix={storagePrefix} can={(feature) => can(feature as StaffFeature)} />}
         {tab === "channels" && <MarketingChannels can={can} isAdmin={isAdmin} />}
+        {tab === "portal-ads" && <MarketingPortalAds />}
       </div>
     </PageShell>
   );

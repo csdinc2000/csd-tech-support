@@ -99,12 +99,10 @@ export async function sendEmail(
     html: options.html || body.replace(/\n/g, "<br>"),
     ...(options.bcc?.length ? { bcc: options.bcc } : {}),
   };
-  // SendGrid holds valid domain authentication for computersystemsdepot.com,
-  // but the account is out of credits and returns 401 Maximum credits
-  // exceeded, so SMTP remains the default transport. The SMTP host sends from
-  // an IP the domain SPF record does not list, which is why that mail fails
-  // authentication at the recipient. Fix SPF/DMARC in DNS, or top up SendGrid
-  // and set EMAIL_PROVIDER=sendgrid.
+  // SMTP (the company mailbox host) is the default transport; SendGrid was
+  // out of credits. The SMTP host is the domain's MX, which SPF already allows
+  // (+mx), and cPanel signs with the published DKIM key. Set
+  // EMAIL_PROVIDER=sendgrid to send through SendGrid instead.
   const preferSmtp = process.env.EMAIL_PROVIDER !== "sendgrid";
   if (preferSmtp && isSmtpConfigured()) {
     return withCapacityTracking("smtp", options.operation, () => sendSmtpMail(message));

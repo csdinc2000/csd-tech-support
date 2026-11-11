@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import {
   BarChart3, Building2, Code2, Globe, Inbox, Mail, MapPin, MessageCircle, Package, PhoneForwarded, ShieldAlert,
-  Store, Target, Ticket, UserCircle, Gift,
+  Store, Target, Ticket, UserCircle, Gift, Megaphone,
 } from "lucide-react";
 import type { StaffFeature } from "@/hooks/use-admin-access";
 
@@ -54,6 +54,7 @@ const MODULE_GROUPS: { id: string; title: string; modules: Module[] }[] = [
       { id: "local", label: "Local service page", description: "Service-area landing page", href: "/local-service", icon: MapPin, external: true },
       { id: "seo", label: "Local SEO services", description: "Our Google Business & citations offer", href: "/local-seo-services", icon: Target, external: true },
       { id: "scam", label: "Scam check guide", description: "Shareable safety content", href: "/scam-check-guide", icon: ShieldAlert, external: true },
+      { id: "portal-ads", label: "Portal popup ads", description: "Offers shown on the customer portal", href: "/marketing/portal-ads", icon: Megaphone, feature: "crm" },
       { id: "portal-referrals", label: "Refer-a-friend page", description: "Where customers join the program", href: "/portal/referrals", icon: Gift, external: true },
       { id: "intake", label: "Intake form", description: "Where tracked links should land", href: "/intake", icon: Inbox, external: true },
       { id: "embed", label: "Embeddable form", description: "Intake form for partner sites", href: "/embed", icon: Code2, external: true },

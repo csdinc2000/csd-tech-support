@@ -38,6 +38,7 @@ import MarketplaceSellPage from "@/pages/marketplace-sell";
 import MarketplaceManagePage from "@/pages/marketplace-manage";
 import StaffAria from "@/components/aria/staff-aria";
 import SupportChatWidget from "@/components/aria/support-chat-widget";
+import PortalAdPopup from "@/components/portal/portal-ad-popup";
 import NewLeadNotifier from "@/components/notifications/new-lead-notifier";
 import IncomingCallAlerts from "@/components/notifications/incoming-call-alerts";
 import PttRingAlerts from "@/components/ptt/ptt-ring-alerts";
@@ -330,6 +331,11 @@ function RequireApproved({ children }: { children: React.ReactNode }) {
 
 // Public pages where the customer-facing support chatbot should appear.
 // (The /embed page is excluded so the widget isn't nested inside embeds.)
+// Customer portal pages that may show a popup ad (Marketing → Portal popup
+// ads). Private link pages (manage listing, referral dashboard, signing) and
+// payment pages are left alone.
+const PORTAL_AD_PATHS = ["/portal", "/portal/ticket", "/portal/referrals", "/portal/marketplace"];
+
 const SUPPORT_CHAT_PATHS = [
   "/",
   "/intake",
@@ -422,6 +428,7 @@ function Router() {
         </Route>
       </Switch>
       </div>
+      {PORTAL_AD_PATHS.includes(location) && <PortalAdPopup key={location} />}
       {showSupportChat && <SupportChatWidget hideLauncherOnMobile={chatFormPage && formFieldFocused} onOpenChange={setSupportChatOpen} />}
     </>
   );

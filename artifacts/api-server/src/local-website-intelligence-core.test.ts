@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  boundingBox,
   collectTechnologyNames,
+  isRetryableOverpassFailure,
   mapWhatCmsResponse,
+  osmSearchCacheKey,
+  overpassBusinessQuery,
   publicWebsite,
   validPublicWebsite,
 } from "./local-website-intelligence-core.ts";
@@ -46,4 +50,27 @@ test("WhatCMS result codes distinguish WordPress, no detection, unavailable, and
   assert.equal(mapWhatCmsResponse({ result: { code: 201 } }).status, "not_detected");
   assert.equal(mapWhatCmsResponse({ result: { code: 202 } }).status, "unavailable");
   assert.equal(mapWhatCmsResponse({ result: { code: 120 } }).status, "rate_limited");
+});
+
+test("OpenStreetMap search uses one cheap bounding-box query around the center", () => {
+  const [south, west, north, east] = boundingBox(26.1664, -80.2134, 5).split(",").map(Number);
+  assert.ok(south < 26.1664 && north > 26.1664 && west < -80.2134 && east > -80.2134);
+  assert.ok(Math.abs((north - south) / 2 - 5 / 69) < 0.0001);
+  const query = overpassBusinessQuery(26.1664, -80.2134, 5);
+  assert.match(query, /\[bbox:[-\d.,]+\]/);
+  assert.doesNotMatch(query, /around:/);
+});
+
+test("overloaded or unreachable Overpass servers are retried on the next server; bad requests are not", () => {
+  for (const status of [429, 502, 503, 504]) {
+    assert.equal(isRetryableOverpassFailure({ response: { status } }), true, String(status));
+  }
+  assert.equal(isRetryableOverpassFailure({ code: "ECONNABORTED" }), true);
+  assert.equal(isRetryableOverpassFailure({ code: "ECONNREFUSED" }), true);
+  assert.equal(isRetryableOverpassFailure({ response: { status: 400 } }), false);
+});
+
+test("search cache keys group nearby searches with the same radius", () => {
+  assert.equal(osmSearchCacheKey(26.16641, -80.21339, 5), osmSearchCacheKey(26.16639, -80.21341, 5));
+  assert.notEqual(osmSearchCacheKey(26.1664, -80.2134, 5), osmSearchCacheKey(26.1664, -80.2134, 10));
 });

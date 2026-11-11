@@ -189,6 +189,7 @@ import { registerContactSmsRoutes } from "./contact-sms-routes";
 import { registerSharedInboxRoutes } from "../shared-inbox";
 import { recordIntakeReferral, registerReferralRoutes, type ReferralMailer } from "../referrals";
 import { registerVoucherRoutes, type VoucherMailer } from "../vouchers";
+import { registerPortalAdRoutes } from "../portal-ads";
 import { defaultAgentPhones, registerOutboundCallRoutes } from "./outbound-call-routes";
 import { registerBrowserVoiceRoutes } from "./browser-voice-routes";
 import { registerStaffMeetingRoutes } from "../staff-meetings";
@@ -340,6 +341,7 @@ export async function registerRoutes(app: Express, options: RouteRegistrationOpt
   registerMarketplaceRoutes(app, { mailer: options.marketplaceMailer, scanReader: options.marketplaceScanReader, lookupReader: options.marketplaceLookupReader });
   registerReferralRoutes(app, { mailer: options.referralMailer });
   registerVoucherRoutes(app, { mailer: options.voucherMailer });
+  registerPortalAdRoutes(app);
   registerVoiceIntakeRoutes(app);
   await ensureInvoiceSchema();
   await applyCatalogInvoiceLinkMigration();
