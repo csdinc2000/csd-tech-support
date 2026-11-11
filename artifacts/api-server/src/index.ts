@@ -101,8 +101,8 @@ app.use("/api/paypal-import", express.json({ limit: "8mb" }));
 app.use("/api/contact-import", express.json({ limit: "8mb" }));
 // Marketplace listings carry up to 8 base64 photos (each capped at 1.5 MB server-side).
 app.use(["/api/portal/marketplace", "/api/marketplace"], express.json({ limit: "16mb" }));
-// Intake and the customer avatar carry one base64 device photo (≤1 MB server-side).
-app.use(["/api/intake", "/api/clients/:id/avatar", "/api/staff-profile/me/avatar"], express.json({ limit: "2mb" }));
+// Intake, avatars and portal ads carry one base64 image (≤1 MB server-side).
+app.use(["/api/intake", "/api/clients/:id/avatar", "/api/staff-profile/me/avatar", "/api/crm/portal-ads"], express.json({ limit: "2mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 

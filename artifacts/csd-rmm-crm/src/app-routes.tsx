@@ -128,7 +128,7 @@ function LegacyDispatchSettingsRedirect() {
 // Hub pages pick their tab from the URL, so each tab URL is a real route.
 const CUSTOMERS_HUB_TABS = ["/crm", "/clients", "/crm/contacts", "/crm/leads", "/crm/pipeline", "/admin/intakes"];
 const PHONE_HUB_TABS = ["/messages", "/admin/call-tracking", "/admin/phone", "/comms/voicemails", "/comms/config"];
-const MARKETING_TABS = ["/marketing/campaigns", "/marketing/referrals", "/marketing/vouchers", "/marketing/tools", "/marketing/playbook", "/marketing/channels"];
+const MARKETING_TABS = ["/marketing/campaigns", "/marketing/referrals", "/marketing/vouchers", "/marketing/tools", "/marketing/playbook", "/marketing/channels", "/marketing/portal-ads"];
 const SALES_TABS = ["/sales/lead-gen", "/sales/speed-to-lead", "/sales/copilot"];
 
 // Old or duplicate URLs: kept working, sent to the canonical page.
@@ -177,7 +177,7 @@ export const STAFF_ROUTES: readonly StaffRoute[] = [
 
   // Marketing
   { path: "/marketing", access: feature("crm"), render: page(MarketingPage),
-    nav: { group: "marketing", name: "Marketing Hub", icon: Megaphone, match: ["/marketing/channels"], exact: true } },
+    nav: { group: "marketing", name: "Marketing Hub", icon: Megaphone, match: ["/marketing/channels", "/marketing/portal-ads"], exact: true } },
   ...MARKETING_TABS.map((path) => ({
     path,
     access: feature("crm"),
