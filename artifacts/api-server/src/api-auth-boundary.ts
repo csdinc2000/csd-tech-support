@@ -1,8 +1,8 @@
 import type { RequestHandler } from "express";
 import { requireAuth } from "./middlewares/clerkAuth";
-import { isAdminUser, isAllStaffApiPath, requiredFeatureForApiPath } from "./security";
+import { isAdminUser, isAllStaffApiPath, requiredCapabilityForApiPath, requiredFeatureForApiPath } from "./security";
 import { logger } from "./lib/logger";
-import { getStaffAccess } from "./staff-access";
+import { getStaffAccess, type StaffAccess } from "./staff-access";
 
 // Paths under /api that stay reachable WITHOUT a logged-in session. Some are
 // method-specific: a path can be public for one verb but admin for another.
@@ -55,6 +55,38 @@ export function isPublicApiRequest(method: string, path: string): boolean {
   return false;
 }
 
+type StaffApiDecision = { allowed: true } | { allowed: false; message: string; unclassified?: boolean };
+
+/**
+ * The authorization decision for a signed-in, non-owner staff member (owners
+ * pass before this). Pure, so it can be tested with real access profiles.
+ */
+export function authorizeStaffApiRequest(
+  path: string,
+  method: string,
+  access: Pick<StaffAccess, "approvalStatus" | "features" | "capabilities">,
+): StaffApiDecision {
+  if (access.approvalStatus !== "approved") return { allowed: false, message: "Approved staff access required" };
+  const required = requiredFeatureForApiPath(path, method);
+  // Communications hub switches: any one listed switch is enough, and it also
+  // unlocks owner-only paths (e.g. Main Line Setup).
+  const capabilities = requiredCapabilityForApiPath(path, method);
+  const hasCapability = Boolean(capabilities?.some((capability) => access.capabilities[capability]));
+  if (required === "owner" && !hasCapability) return { allowed: false, message: "Owner approval required" };
+  if (required && required !== "owner" && !access.features[required]) {
+    return { allowed: false, message: `Approved ${required} access required` };
+  }
+  if (capabilities && !hasCapability) {
+    return { allowed: false, message: "This communications tool isn't switched on for your staff account" };
+  }
+  // Fail closed: a path with no feature gate must be explicitly listed as open
+  // to all staff (ALL_STAFF_API_PREFIXES in security.ts).
+  if (!required && !isAllStaffApiPath(path, method)) {
+    return { allowed: false, message: "This endpoint is not available to staff accounts", unclassified: true };
+  }
+  return { allowed: true };
+}
+
 // Mount after Clerk and the body parsers, before all protected API routes.
 export const apiAuthenticationBoundary: RequestHandler = (req, res, next) => {
   // Express routes are case-insensitive by default; normalize before checking
@@ -64,27 +96,15 @@ export const apiAuthenticationBoundary: RequestHandler = (req, res, next) => {
   if (isPublicApiRequest(req.method, path)) return next();
   requireAuth(req, res, (error?: unknown) => {
     if (error) return next(error);
-    const required = requiredFeatureForApiPath(path, req.method);
     if (isAdminUser(req)) return next();
     void getStaffAccess(req)
       .then((access) => {
-        if (access.approvalStatus !== "approved") {
-          res.status(403).json({ message: "Approved staff access required" });
-          return;
-        }
-        if (required === "owner") {
-          res.status(403).json({ message: "Owner approval required" });
-          return;
-        }
-        if (required && !access.features[required]) {
-          res.status(403).json({ message: `Approved ${required} access required` });
-          return;
-        }
-        // Fail closed: a path with no feature gate must be explicitly listed
-        // as open to all staff (ALL_STAFF_API_PREFIXES in security.ts).
-        if (!required && !isAllStaffApiPath(path, req.method)) {
-          logger.warn({ method: req.method, path }, "Refused unclassified API path; classify it in security.ts");
-          res.status(403).json({ message: "This endpoint is not available to staff accounts" });
+        const decision = authorizeStaffApiRequest(path, req.method, access);
+        if (!decision.allowed) {
+          if (decision.unclassified) {
+            logger.warn({ method: req.method, path }, "Refused unclassified API path; classify it in security.ts");
+          }
+          res.status(403).json({ message: decision.message });
           return;
         }
         return next();

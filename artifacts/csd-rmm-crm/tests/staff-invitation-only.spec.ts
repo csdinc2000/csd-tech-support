@@ -23,6 +23,10 @@ for (const role of ["owner", "administrator"]) {
       ),
       "/api/staff-access/accounts": { accounts: [], totalCount: 0, nextOffset: null },
       "/api/staff-access/audit": [], "/api/staff-access/invites": [],
+      [`/api/staff-access/${profile.id}/profile`]: {
+        email: null, phone: null, jobTitle: null, department: null, updatedAt: null,
+        verifiedEmails: [], emailChangeAvailable: false, emailMessage: "No verified sign-in email yet.",
+      },
     };
     await page.route("**/api/**", async (route) => {
       const url = new URL(route.request().url());

@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { getAuth } from "@clerk/express";
-import type { StaffFeature } from "./staff-access";
+import type { CommunicationCapability, StaffFeature } from "./staff-access";
 import { pool } from "./db";
 import {
   recordSharedRateLimitCleanupFailure,
@@ -179,6 +179,35 @@ export function requiredFeatureForApiPath(path: string, method = "GET"): StaffFe
     (isHelpdeskConfig && verb !== "GET") ||
     isSensitiveHelpdeskRead
   ) return "helpdeskAdmin";
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Communications hub tab switches
+// ---------------------------------------------------------------------------
+// Per-staff switches (Staff Access → Inbox & SMS / Calls & Tracking / Main
+// Line Setup) required on top of the path's feature gate. A path that
+// requiredFeatureForApiPath reserves for the "owner" is also open to staff
+// holding one of these switches. Returns any-of; null = no switch involved.
+export function requiredCapabilityForApiPath(path: string, method = "GET"): CommunicationCapability[] | null {
+  const verb = method.toUpperCase();
+  const under = (prefix: string) => path === prefix || path.startsWith(prefix + "/");
+  // Inbox & SMS: the shared inbox, threads and bulk texting. Texting one
+  // customer (business card) stays with every approved staff member.
+  if (under("/api/sms") && !(path === "/api/sms/send" && verb === "POST")) return ["smsInbox"];
+  // Calls & Tracking: tracking numbers, call flows, and working individual
+  // calls. The call list and analytics stay with communications because the
+  // tech board and the Marketing hub read them.
+  if (
+    under("/api/call-tracking/numbers") ||
+    under("/api/call-tracking/flows") ||
+    /^\/api\/call-tracking\/calls\/[^/]+\/(contact|ticket|forwarding-outcomes)$/.test(path)
+  ) return ["callTracking"];
+  // Main Line Setup: where customer calls and texts go.
+  if (path === "/api/twilio/sync-webhooks" && verb !== "GET") return ["mainLineSetup", "callTracking"];
+  if (path === "/api/twilio/settings" && verb !== "GET") return ["mainLineSetup"];
+  if (under("/api/twilio/voicemail-greeting") && verb !== "GET") return ["mainLineSetup"];
+  if (under("/api/twilio/call-log") && verb !== "GET") return ["mainLineSetup"];
   return null;
 }
 

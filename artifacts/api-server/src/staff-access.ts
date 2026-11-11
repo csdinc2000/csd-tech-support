@@ -65,12 +65,46 @@ export function roleFeatureMap(role: StaffRole): Record<StaffFeature, boolean> {
   ])) as Record<StaffFeature, boolean>;
 }
 
+/**
+ * Per-staff switches for the Communications hub tabs. They only take effect
+ * for approved staff who also have the `communications` feature; owners
+ * always have them. Paths are mapped in security.ts
+ * (requiredCapabilityForApiPath).
+ */
+export type CommunicationCapability = "smsInbox" | "callTracking" | "mainLineSetup";
+export const COMMUNICATION_CAPABILITIES: readonly CommunicationCapability[] = ["smsInbox", "callTracking", "mainLineSetup"];
+/** Inbox & SMS stays on by default (as before); the other two are owner-granted. */
+export const DEFAULT_COMMUNICATION_CAPABILITIES: Record<CommunicationCapability, boolean> = {
+  smsInbox: true,
+  callTracking: false,
+  mainLineSetup: false,
+};
+
+export type StaffCapabilities = { viewVoicemails: boolean } & Record<CommunicationCapability, boolean>;
+
+/** Stored switches merged over the defaults (what the admin screen shows). */
+export function configuredCommunicationCapabilities(stored: unknown): Record<CommunicationCapability, boolean> {
+  const overrides = stored && typeof stored === "object" ? stored as Record<string, unknown> : {};
+  return Object.fromEntries(COMMUNICATION_CAPABILITIES.map((key) => [
+    key,
+    typeof overrides[key] === "boolean" ? overrides[key] : DEFAULT_COMMUNICATION_CAPABILITIES[key],
+  ])) as Record<CommunicationCapability, boolean>;
+}
+
+const allCapabilities = (enabled: boolean): StaffCapabilities => ({
+  viewVoicemails: enabled,
+  smsInbox: enabled,
+  callTracking: enabled,
+  mainLineSetup: enabled,
+});
+
 export type StaffAccess = {
   role: StaffRole | "owner";
   approvalStatus: ApprovalStatus;
   features: Record<StaffFeature, boolean>;
   configuredFeatures: Record<StaffFeature, boolean>;
-  capabilities: { viewVoicemails: boolean };
+  /** Effective: what this request may do right now. */
+  capabilities: StaffCapabilities;
 };
 
 type StaffAccessSnapshot = {
@@ -78,7 +112,8 @@ type StaffAccessSnapshot = {
   approvalStatus: ApprovalStatus;
   features: Record<StaffFeature, boolean>;
   effectiveFeatures: Record<StaffFeature, boolean>;
-  capabilities: { viewVoicemails: boolean };
+  /** viewVoicemails is effective; the communication switches are as configured. */
+  capabilities: StaffCapabilities;
   updatedAt: Date | null;
 };
 
@@ -130,6 +165,7 @@ function accessSnapshotFromRow(row: any): StaffAccessSnapshot {
     effectiveFeatures: featureMap(role, approvalStatus, row?.feature_permissions),
     capabilities: {
       viewVoicemails: approvalStatus === "approved" && row?.can_view_voicemails !== false,
+      ...configuredCommunicationCapabilities(row?.capability_permissions),
     },
     updatedAt: row?.updated_at ?? null,
   };
@@ -137,7 +173,7 @@ function accessSnapshotFromRow(row: any): StaffAccessSnapshot {
 
 async function accessForUserId(userId: string): Promise<StaffAccess> {
   const result = await pool.query(
-    `SELECT role, can_view_voicemails, approval_status, feature_permissions
+    `SELECT role, can_view_voicemails, approval_status, feature_permissions, capability_permissions
      FROM staff_access_profiles WHERE user_id = $1`,
     [userId],
   );
@@ -146,13 +182,19 @@ async function accessForUserId(userId: string): Promise<StaffAccess> {
     ? row.role : "field_technician") as StaffRole;
   const approvalStatus = (["approved", "suspended"].includes(row?.approval_status)
     ? row.approval_status : "pending") as ApprovalStatus;
+  const features = featureMap(role, approvalStatus, row?.feature_permissions);
+  const configured = configuredCommunicationCapabilities(row?.capability_permissions);
+  const canCommunicate = approvalStatus === "approved" && features.communications;
   return {
     role,
     approvalStatus,
-    features: featureMap(role, approvalStatus, row?.feature_permissions),
+    features,
     configuredFeatures: featureMap(role, "approved", row?.feature_permissions),
     capabilities: {
       viewVoicemails: approvalStatus === "approved" && row?.can_view_voicemails !== false,
+      smsInbox: canCommunicate && configured.smsInbox,
+      callTracking: canCommunicate && configured.callTracking,
+      mainLineSetup: canCommunicate && configured.mainLineSetup,
     },
   };
 }
@@ -171,7 +213,7 @@ export async function getStaffAccessForUserId(userId: string): Promise<StaffAcce
       approvalStatus: "pending",
       features: featureMap("field_technician", "pending"),
       configuredFeatures: featureMap("field_technician", "approved"),
-      capabilities: { viewVoicemails: false },
+      capabilities: allCapabilities(false),
     };
   }
 
@@ -194,7 +236,7 @@ export async function getStaffAccessForUserId(userId: string): Promise<StaffAcce
       approvalStatus,
       features: Object.fromEntries(ALL_STAFF_FEATURES.map((feature) => [feature, enabled])) as Record<StaffFeature, boolean>,
       configuredFeatures: Object.fromEntries(ALL_STAFF_FEATURES.map((feature) => [feature, true])) as Record<StaffFeature, boolean>,
-      capabilities: { viewVoicemails: enabled },
+      capabilities: allCapabilities(enabled),
     };
   }
 
@@ -210,7 +252,7 @@ export async function getStaffAccess(req: Request): Promise<StaffAccess> {
       approvalStatus: status,
       features: Object.fromEntries(ALL_STAFF_FEATURES.map((feature) => [feature, enabled])) as Record<StaffFeature, boolean>,
       configuredFeatures: Object.fromEntries(ALL_STAFF_FEATURES.map((feature) => [feature, true])) as Record<StaffFeature, boolean>,
-      capabilities: { viewVoicemails: enabled },
+      capabilities: allCapabilities(enabled),
     };
   }
   const userId = req.dbUser?.id;
@@ -220,7 +262,7 @@ export async function getStaffAccess(req: Request): Promise<StaffAccess> {
       approvalStatus: "pending",
       features: featureMap("field_technician", "pending"),
       configuredFeatures: featureMap("field_technician", "approved"),
-      capabilities: { viewVoicemails: false },
+      capabilities: allCapabilities(false),
     };
   }
   return accessForUserId(userId);
@@ -329,7 +371,7 @@ export function registerStaffAccessRoutes(
     try {
       const result = await pool.query(`
         SELECT u.id, u.email, u.first_name, u.last_name, p.role,
-          p.can_view_voicemails, p.approval_status, p.feature_permissions, p.updated_at,
+          p.can_view_voicemails, p.approval_status, p.feature_permissions, p.capability_permissions, p.updated_at,
           EXISTS (SELECT 1 FROM staff_access_audit oa WHERE oa.target_user_id = u.id AND oa.action = 'owner_status_updated') AS owner_status_explicit,
           EXISTS (SELECT 1 FROM staff_invites i WHERE i.accepted_by = u.id) AS invited,
           (SELECT hl.helpdesk_user_id FROM staff_helpdesk_links hl
@@ -358,7 +400,7 @@ export function registerStaffAccessRoutes(
               approvalStatus: ownerStatus,
               features: Object.fromEntries(ALL_STAFF_FEATURES.map((feature) => [feature, true])),
               effectiveFeatures: Object.fromEntries(ALL_STAFF_FEATURES.map((feature) => [feature, ownerStatus === "approved"])),
-              capabilities: { viewVoicemails: ownerStatus === "approved" },
+              capabilities: allCapabilities(ownerStatus === "approved"),
             }
           : accessSnapshotFromRow(row);
         return {
@@ -527,6 +569,7 @@ export function registerStaffAccessRoutes(
     const role = req.body?.role;
     const approvalStatus = req.body?.approvalStatus;
     const viewVoicemails = req.body?.capabilities?.viewVoicemails;
+    const requestedCapabilities = req.body?.capabilities ?? {};
     const requestedPermissions = req.body?.features;
     const expectedUpdatedAt = req.body?.expectedUpdatedAt;
     if (!STAFF_ROLES.includes(role)) {
@@ -539,6 +582,13 @@ export function registerStaffAccessRoutes(
     }
     if (typeof viewVoicemails !== "boolean") {
       res.status(400).json({ message: "Voicemail access must be on or off" });
+      return;
+    }
+    // Communication switches are optional so older clients keep working; a
+    // missing switch keeps its saved value.
+    if (COMMUNICATION_CAPABILITIES.some((key) =>
+      requestedCapabilities[key] !== undefined && typeof requestedCapabilities[key] !== "boolean")) {
+      res.status(400).json({ message: "Communication tool access must be on or off" });
       return;
     }
     if (!requestedPermissions || typeof requestedPermissions !== "object" || Array.isArray(requestedPermissions)) {
@@ -584,7 +634,7 @@ export function registerStaffAccessRoutes(
           return;
         }
         const previous = await client.query(
-          `SELECT role, can_view_voicemails, approval_status, feature_permissions, updated_at
+          `SELECT role, can_view_voicemails, approval_status, feature_permissions, capability_permissions, updated_at
            FROM staff_access_profiles WHERE user_id = $1 FOR UPDATE`,
           [target.rows[0].id],
         );
@@ -619,22 +669,29 @@ export function registerStaffAccessRoutes(
           });
           return;
         }
+        const savedCapabilities = configuredCommunicationCapabilities(previous.rows[0].capability_permissions);
+        const capabilityPermissions = Object.fromEntries(COMMUNICATION_CAPABILITIES.map((key) => [
+          key,
+          typeof requestedCapabilities[key] === "boolean" ? requestedCapabilities[key] : savedCapabilities[key],
+        ]));
         const result = await client.query(
           `INSERT INTO staff_access_profiles
            (user_id, role, can_view_voicemails, approval_status, feature_permissions,
-            approved_at, approved_by, updated_at)
+            approved_at, approved_by, updated_at, capability_permissions)
          SELECT id::varchar, $2::varchar, $3::boolean, $4::varchar, $5::jsonb,
             CASE WHEN $4::varchar = 'approved' THEN NOW() ELSE NULL END,
-            CASE WHEN $4::varchar = 'approved' THEN $6::varchar ELSE NULL END, NOW()
+            CASE WHEN $4::varchar = 'approved' THEN $6::varchar ELSE NULL END, NOW(), $7::jsonb
          FROM auth_users WHERE id = $1::text
          ON CONFLICT (user_id) DO UPDATE SET
            role=EXCLUDED.role, can_view_voicemails=EXCLUDED.can_view_voicemails,
            approval_status=EXCLUDED.approval_status,
            feature_permissions=EXCLUDED.feature_permissions,
+           capability_permissions=EXCLUDED.capability_permissions,
            approved_at=EXCLUDED.approved_at, approved_by=EXCLUDED.approved_by,
            updated_at=GREATEST(NOW(), staff_access_profiles.updated_at + INTERVAL '1 millisecond')
-         RETURNING user_id, role, can_view_voicemails, approval_status, feature_permissions, updated_at`,
-          [target.rows[0].id, role, viewVoicemails, approvalStatus, JSON.stringify(permissions), req.dbUser?.id ?? null],
+         RETURNING user_id, role, can_view_voicemails, approval_status, feature_permissions, capability_permissions, updated_at`,
+          [target.rows[0].id, role, viewVoicemails, approvalStatus, JSON.stringify(permissions), req.dbUser?.id ?? null,
+            JSON.stringify(capabilityPermissions)],
         );
         if (!result.rows[0]) {
           await client.query("ROLLBACK");
@@ -648,6 +705,7 @@ export function registerStaffAccessRoutes(
               can_view_voicemails: previous.rows[0].can_view_voicemails,
               approval_status: previous.rows[0].approval_status,
               feature_permissions: previous.rows[0].feature_permissions,
+              capability_permissions: configuredCommunicationCapabilities(previous.rows[0].capability_permissions),
             }
           : {};
         await client.query(
@@ -663,6 +721,7 @@ export function registerStaffAccessRoutes(
               can_view_voicemails: row.can_view_voicemails,
               approval_status: row.approval_status,
               feature_permissions: row.feature_permissions,
+              capability_permissions: configuredCommunicationCapabilities(row.capability_permissions),
             }),
           ],
         );
@@ -682,7 +741,10 @@ export function registerStaffAccessRoutes(
           approvalStatus: row.approval_status,
           features: featureMap(row.role, "approved", row.feature_permissions),
           effectiveFeatures: featureMap(row.role, row.approval_status, row.feature_permissions),
-          capabilities: { viewVoicemails: row.approval_status === "approved" && row.can_view_voicemails },
+          capabilities: {
+            viewVoicemails: row.approval_status === "approved" && row.can_view_voicemails,
+            ...configuredCommunicationCapabilities(row.capability_permissions),
+          },
           updatedAt: row.updated_at,
         });
       } catch (error) {
@@ -743,7 +805,7 @@ export function registerStaffAccessRoutes(
         return;
       }
       const previousProfile = await client.query(
-        `SELECT role, can_view_voicemails, approval_status, feature_permissions, updated_at
+        `SELECT role, can_view_voicemails, approval_status, feature_permissions, capability_permissions, updated_at
          FROM staff_access_profiles WHERE user_id=$1 FOR UPDATE`,
         [target.rows[0].id],
       );

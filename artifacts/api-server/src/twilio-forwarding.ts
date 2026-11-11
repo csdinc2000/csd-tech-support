@@ -19,6 +19,7 @@ import {
 import { queueIncomingCallNotification } from "./slack";
 import { getGreetingAudio, hasGreetingAudio } from "./greeting-store";
 import { getActiveCallRecipientPhones, handleStaffInboundSms, recordSmsConsentState, enqueueStaffEventNotification } from "./staff-dispatch";
+import { loadAppRingIdentities } from "./app-phone";
 import {
   enqueueSmsForwardBroadcast,
   parseSmsForwardTargets,
@@ -359,6 +360,8 @@ export function registerTwilioForwarding(
     getCallFlow?: typeof getCallFlow;
     upsertCallLog?: typeof upsertCallLog;
     getActiveCallRecipientPhones?: typeof getActiveCallRecipientPhones;
+    /** Staff who answer in the app (browser); see app-phone.ts. */
+    getAppRingIdentities?: typeof loadAppRingIdentities;
     alertTeamOfCall?: typeof alertTeamOfCall;
     notifyStaffEvent?: typeof enqueueStaffEventNotification;
     sendToVoicemail?: (twiml: twilio.twiml.VoiceResponse, settings: any, base: string) => Promise<void>;
@@ -372,6 +375,7 @@ export function registerTwilioForwarding(
   const loadFlow = dependencies.getCallFlow ?? getCallFlow;
   const saveCallLog = dependencies.upsertCallLog ?? upsertCallLog;
   const loadRecipients = dependencies.getActiveCallRecipientPhones ?? getActiveCallRecipientPhones;
+  const loadAppRings = dependencies.getAppRingIdentities ?? loadAppRingIdentities;
   const renderVoicemail = dependencies.sendToVoicemail ?? sendToVoicemail;
   const notifyStaffEvent = dependencies.notifyStaffEvent ?? enqueueStaffEventNotification;
   const saveForwardingOutcome = dependencies.saveForwardingOutcome ?? upsertCallForwardingOutcome;
@@ -514,8 +518,14 @@ export function registerTwilioForwarding(
         ? [configuredTargets[0].number]
         : resolveLiveCallTargets(trackingForwardTo, rosterPhones);
       const staffFanout = !configuredTargets.length && !trackingForwardTo;
+      // Staff who chose "Ring me in the app" ring alongside the phones; first
+      // to answer gets the call. A lookup failure never blocks the call.
+      const appIdentities = await withVoiceRoutingDeadline(loadAppRings(), 700).catch(() => {
+        logger.warn("App-ring staff lookup failed; ringing phones only");
+        return [] as string[];
+      });
 
-      if (!callTargets.length) {
+      if (!callTargets.length && !appIdentities.length) {
         notifyTeam(settings, {
           kind: "incoming",
           from: incomingFrom,
@@ -576,6 +586,13 @@ export function registerTwilioForwarding(
           targetOptions.statusCallbackEvent = ["initiated", "ringing", "answered", "completed"];
         }
         dial.number(targetOptions, target);
+      }
+      for (const identity of appIdentities) {
+        const client = dial.client();
+        client.identity(identity);
+        // The app shows who is calling; the leg's From is the caller ID above.
+        client.parameter({ name: "caller", value: fromNumber });
+        client.parameter({ name: "line", value: toNumber });
       }
       // Dial always has an action (dial-result) which handles missed-call alerts
       // and the hangup-vs-voicemail decision, so nothing more is needed here.
