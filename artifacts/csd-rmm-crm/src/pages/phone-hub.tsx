@@ -38,10 +38,19 @@ const TAB_TO_PATH: Record<string, string> = {
 export default function PhoneHub() {
   const [location, setLocation] = useLocation();
   const { isAdmin, capabilities } = useAdminAccess();
-  const activeTab = PATH_TO_TAB[location] ?? "messages";
-  const canViewVoicemails = isAdmin || capabilities.viewVoicemails;
-  const restrictedTab =
-    activeTab !== "messages" && !(activeTab === "voicemails" && canViewVoicemails);
+  // Each tab follows its switch in Staff Access (owners have them all).
+  const allowed: Record<string, boolean> = {
+    messages: isAdmin || capabilities.smsInbox,
+    calls: isAdmin || capabilities.callTracking,
+    configuration: isAdmin || capabilities.mainLineSetup,
+    voicemails: isAdmin || capabilities.viewVoicemails,
+  };
+  const requestedTab = PATH_TO_TAB[location] ?? "messages";
+  // /comms opens the first tool this person can use.
+  const activeTab = location === "/comms" && !allowed.messages
+    ? (["calls", "configuration", "voicemails"].find((tab) => allowed[tab]) ?? "messages")
+    : requestedTab;
+  const restrictedTab = !allowed[activeTab];
 
   return (
     <div className="p-4 lg:p-6">
@@ -62,23 +71,25 @@ export default function PhoneHub() {
           className="flex h-auto w-full justify-start gap-1 overflow-x-auto whitespace-nowrap rounded-lg p-1"
           aria-label="Communication tools"
         >
-          <TabsTrigger value="messages" data-testid="tab-messages" className="shrink-0">
-            <MessageCircle className="mr-2 h-4 w-4" />
-            Inbox &amp; SMS
-          </TabsTrigger>
-          {isAdmin && (
-            <>
-              <TabsTrigger value="calls" data-testid="tab-call-tracking" className="shrink-0">
-                <BarChart3 className="mr-2 h-4 w-4" />
-                Calls &amp; Tracking
-              </TabsTrigger>
-              <TabsTrigger value="configuration" data-testid="tab-phone-settings" className="shrink-0">
-                <Phone className="mr-2 h-4 w-4" />
-                Main Line Setup
-              </TabsTrigger>
-            </>
+          {allowed.messages && (
+            <TabsTrigger value="messages" data-testid="tab-messages" className="shrink-0">
+              <MessageCircle className="mr-2 h-4 w-4" />
+              Inbox &amp; SMS
+            </TabsTrigger>
           )}
-          {canViewVoicemails && (
+          {allowed.calls && (
+            <TabsTrigger value="calls" data-testid="tab-call-tracking" className="shrink-0">
+              <BarChart3 className="mr-2 h-4 w-4" />
+              Calls &amp; Tracking
+            </TabsTrigger>
+          )}
+          {allowed.configuration && (
+            <TabsTrigger value="configuration" data-testid="tab-phone-settings" className="shrink-0">
+              <Phone className="mr-2 h-4 w-4" />
+              Main Line Setup
+            </TabsTrigger>
+          )}
+          {allowed.voicemails && (
             <TabsTrigger value="voicemails" data-testid="tab-voicemails" className="shrink-0">
               <Voicemail className="mr-2 h-4 w-4" />
               Voicemails
@@ -86,34 +97,36 @@ export default function PhoneHub() {
           )}
         </TabsList>
 
-        {!isAdmin && restrictedTab && (
-          <div className="mt-6 rounded-xl border bg-card p-8 text-center shadow-sm">
+        {restrictedTab && (
+          <div className="mt-6 rounded-xl border bg-card p-8 text-center shadow-sm" data-testid="comms-tool-locked">
             <ShieldAlert className="mx-auto mb-3 h-9 w-9 text-csd-red" />
-            <h2 className="text-lg font-semibold">Administrator access required</h2>
+            <h2 className="text-lg font-semibold">This tool isn't switched on for you</h2>
             <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-              This feature is not enabled for your staff account.
+              Ask the account owner or a staff administrator to turn it on in Staff Administration → Roles &amp; Access.
             </p>
           </div>
         )}
 
-        <TabsContent value="messages" className="mt-4">
-          <MessagesPage />
-        </TabsContent>
-        {isAdmin && (
-          <>
-            <TabsContent value="calls" className="mt-4">
-              <CallTrackingPage />
-            </TabsContent>
-            <TabsContent value="configuration" className="mt-4">
-              <PhoneSettingsPage
-                defaultTab="numbers"
-                visibleTabs={["numbers", "callflow", "voicemail", "sms"]}
-                embedded
-              />
-            </TabsContent>
-          </>
+        {allowed.messages && (
+          <TabsContent value="messages" className="mt-4">
+            <MessagesPage />
+          </TabsContent>
         )}
-        {canViewVoicemails && (
+        {allowed.calls && (
+          <TabsContent value="calls" className="mt-4">
+            <CallTrackingPage />
+          </TabsContent>
+        )}
+        {allowed.configuration && (
+          <TabsContent value="configuration" className="mt-4">
+            <PhoneSettingsPage
+              defaultTab="numbers"
+              visibleTabs={["numbers", "callflow", "voicemail", "sms"]}
+              embedded
+            />
+          </TabsContent>
+        )}
+        {allowed.voicemails && (
           <TabsContent value="voicemails" className="mt-4">
             <VoicemailsList />
           </TabsContent>

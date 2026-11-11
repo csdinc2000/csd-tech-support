@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import type { ApprovalStatus, StaffFeature, StaffRole } from "@/hooks/use-admin-access";
+import type { ApprovalStatus, StaffCapabilities, StaffFeature, StaffRole } from "@/hooks/use-admin-access";
 import { useAdminAccess } from "@/hooks/use-admin-access";
 import StaffInviteManager from "./staff-invite-manager";
 import { StaffContactEditor } from "./staff-contact-editor";
@@ -36,7 +36,7 @@ type StaffProfile = {
   isOwner: boolean;
   features: Record<StaffFeature, boolean>;
   effectiveFeatures: Record<StaffFeature, boolean>;
-  capabilities: { viewVoicemails: boolean };
+  capabilities: StaffCapabilities;
   assignments: {
     clientIds: number[];
     jobIds: number[];
@@ -52,7 +52,7 @@ type AccessSnapshot = {
   role: StaffRole;
   approvalStatus: ApprovalStatus;
   features: Record<StaffFeature, boolean>;
-  capabilities: { viewVoicemails: boolean };
+  capabilities: StaffCapabilities;
   updatedAt: string | null;
   assignments?: StaffProfile["assignments"];
 };
@@ -67,6 +67,14 @@ type StaffRecoveryAlert = {
   alertSource: string | null;
   severity: string;
 };
+
+// Communications hub tab switches. They only apply while the person also has
+// the Communications feature.
+const COMMUNICATION_TOOL_OPTIONS: Array<{ key: "smsInbox" | "callTracking" | "mainLineSetup"; label: string; hint: string }> = [
+  { key: "smsInbox", label: "Inbox & SMS", hint: "Shared text inbox, conversation history and bulk texts." },
+  { key: "callTracking", label: "Calls & Tracking", hint: "Tracking numbers, call flows, and linking calls to contacts or tickets." },
+  { key: "mainLineSetup", label: "Main Line Setup", hint: "Where customer calls and texts are forwarded, voicemail greeting and call log." },
+];
 
 const FEATURE_OPTIONS: Array<{ key: StaffFeature; label: string; sensitive?: boolean; hint?: string }> = [
   { key: "dashboard", label: "Dashboard" },
@@ -193,6 +201,13 @@ function changedFields(baseline: AccessSnapshot, latest: AccessSnapshot) {
       before: baseline.capabilities.viewVoicemails ? "Enabled" : "Disabled",
       after: latest.capabilities.viewVoicemails ? "Enabled" : "Disabled",
     });
+  }
+  for (const tool of COMMUNICATION_TOOL_OPTIONS) {
+    const before = baseline.capabilities[tool.key];
+    const after = latest.capabilities[tool.key];
+    if (typeof after === "boolean" && before !== after) {
+      changes.push({ label: tool.label, before: before ? "Enabled" : "Disabled", after: after ? "Enabled" : "Disabled" });
+    }
   }
   if (latest.assignments) {
     const baselineClients = [...(baseline.assignments?.clientIds ?? [])].sort((a, b) => a - b);
@@ -1162,11 +1177,36 @@ export default function StaffAccessPage({ useAccess = useAdminAccess }: { useAcc
                             checked={selectedProfile.capabilities.viewVoicemails}
                             disabled={disabled}
                             onCheckedChange={(checked) =>
-                              update.mutate({ profile: selectedProfile, patch: { capabilities: { viewVoicemails: checked } } })
+                              update.mutate({ profile: selectedProfile, patch: { capabilities: { ...selectedProfile.capabilities, viewVoicemails: checked } } })
                             }
                             className="data-[state=checked]:bg-csd-red"
                           />
                         </label>
+                        <div className="bg-muted/30 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Communications tools
+                          {!selectedProfile.features.communications && (
+                            <span className="ml-2 font-normal normal-case tracking-normal">
+                              (turn on Communications above for these to apply)
+                            </span>
+                          )}
+                        </div>
+                        {COMMUNICATION_TOOL_OPTIONS.map((tool) => (
+                          <label key={tool.key} className="flex cursor-pointer items-center justify-between gap-4 px-3 py-2.5" data-testid={`feature-toggle-${selectedProfile.id}-${tool.key}`}>
+                            <span className={cn("text-sm", (disabled || !selectedProfile.features.communications) && "opacity-50")}>
+                              {tool.label}
+                              <span className="mt-0.5 block max-w-xl text-xs font-normal text-muted-foreground">{tool.hint}</span>
+                            </span>
+                            <Switch
+                              checked={selectedProfile.capabilities[tool.key] === true}
+                              disabled={disabled}
+                              aria-label={`${tool.label} access`}
+                              onCheckedChange={(checked) =>
+                                update.mutate({ profile: selectedProfile, patch: { capabilities: { ...selectedProfile.capabilities, [tool.key]: checked } } })
+                              }
+                              className="data-[state=checked]:bg-csd-red"
+                            />
+                          </label>
+                        ))}
                       </div>
                     </section>
                   </div>

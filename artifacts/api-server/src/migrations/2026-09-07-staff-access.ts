@@ -22,7 +22,10 @@ export async function applyStaffAccessMigration(): Promise<void> {
       ADD COLUMN IF NOT EXISTS approval_status VARCHAR,
       ADD COLUMN IF NOT EXISTS feature_permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
       ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
-      ADD COLUMN IF NOT EXISTS approved_by VARCHAR;
+      ADD COLUMN IF NOT EXISTS approved_by VARCHAR,
+      -- Communications hub tab switches (Inbox & SMS, Calls & Tracking, Main
+      -- Line Setup); missing keys fall back to DEFAULT_COMMUNICATION_CAPABILITIES.
+      ADD COLUMN IF NOT EXISTS capability_permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
 
     UPDATE staff_access_profiles
       SET approval_status = 'approved', approved_at = COALESCE(approved_at, NOW())

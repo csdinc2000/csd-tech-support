@@ -15,8 +15,21 @@ export type AccessProfile = {
   role: StaffRole;
   approvalStatus: ApprovalStatus;
   features: Record<StaffFeature, boolean>;
-  capabilities: { viewVoicemails: boolean };
+  capabilities: StaffCapabilities;
 };
+
+/**
+ * viewVoicemails plus the Communications hub tab switches (Staff Access →
+ * Inbox & SMS / Calls & Tracking / Main Line Setup). From /api/auth/access
+ * these are effective for the signed-in user.
+ */
+export type StaffCapabilities = {
+  viewVoicemails: boolean;
+  smsInbox: boolean;
+  callTracking: boolean;
+  mainLineSetup: boolean;
+};
+const NO_CAPABILITIES: StaffCapabilities = { viewVoicemails: false, smsInbox: false, callTracking: false, mainLineSetup: false };
 
 /** Local authorization is evaluated by the server against verified Clerk claims. */
 export function useAdminAccess() {
@@ -38,7 +51,7 @@ export function useAdminAccess() {
     approvalStatus: query.data?.approvalStatus,
     features: query.data?.features,
     can: (feature: StaffFeature) => query.data?.features?.[feature] === true,
-    capabilities: query.data?.capabilities ?? { viewVoicemails: false },
+    capabilities: { ...NO_CAPABILITIES, ...query.data?.capabilities },
     isLoading: !isLoaded || query.isLoading,
   };
 }
