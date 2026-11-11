@@ -552,6 +552,15 @@ export function registerTwilioForwarding(
         const params = new URLSearchParams();
         if (fromNumber) params.set("from", fromNumber);
         if (configuredTargets.length) params.set("confirm", "1");
+        if (configuredTargets.length && req.body?.CallSid) {
+          params.set("attempt", configuredTargets[0].key);
+          params.set("parent", String(req.body.CallSid));
+          params.set("destination", callTargets[0]);
+        } else if (trackingForwardTo && settings.whisperEnabled && req.body?.CallSid) {
+          params.set("attempt", "tracking");
+          params.set("parent", String(req.body.CallSid));
+          params.set("destination", trackingForwardTo);
+        }
         numberOpts.url = `${base}/webhooks/voice/whisper${params.toString() ? "?" + params.toString() : ""}`;
       }
       for (const target of callTargets) {
@@ -598,20 +607,38 @@ export function registerTwilioForwarding(
       "completed", "no-answer", "busy", "failed", "canceled", "in-progress",
       "ringing", "queued", "initiated",
     ].includes(dialStatus) ? dialStatus : "unknown";
-    const accepted = screened && wasDialAnswered(dialStatus, req.body?.DialBridged, true);
+    const parentCallSid = String(req.body?.CallSid || "");
+    const childCallSid = String(req.body?.DialCallSid || "");
+    let humanAccepted = false;
     if (
-      req.body?.CallSid &&
-      req.body?.DialCallSid &&
-      /^CA[0-9a-f]{32}$/i.test(req.body.CallSid as string) &&
-      /^CA[0-9a-f]{32}$/i.test(req.body.DialCallSid as string) &&
+      screened &&
+      req.query?.route !== "staff" &&
+      /^CA[0-9a-f]{32}$/i.test(parentCallSid) &&
+      /^CA[0-9a-f]{32}$/i.test(childCallSid)
+    ) {
+      try {
+        const outcomes = await withVoiceRoutingDeadline(loadForwardingOutcomes(parentCallSid), 700);
+        humanAccepted = outcomes.some((outcome) =>
+          outcome.childCallSid === childCallSid && outcome.humanAccepted
+        );
+      } catch {
+        logger.warn("Forwarding acceptance status could not be loaded");
+      }
+    }
+    const accepted = humanAccepted || (screened && wasDialAnswered(dialStatus, req.body?.DialBridged, true));
+    if (
+      parentCallSid &&
+      childCallSid &&
+      /^CA[0-9a-f]{32}$/i.test(parentCallSid) &&
+      /^CA[0-9a-f]{32}$/i.test(childCallSid) &&
       destinationNumber &&
       ["primary", "backup1", "backup2", "tracking"].includes(attemptKey) &&
       req.query?.route !== "staff"
     ) {
       try {
         await saveForwardingOutcome({
-          parentCallSid: req.body.CallSid as string,
-          childCallSid: req.body.DialCallSid as string,
+          parentCallSid,
+          childCallSid,
           attemptKey: attemptKey as "primary" | "backup1" | "backup2" | "tracking",
           destinationNumber,
           providerStatus: providerStatus as any,
@@ -621,7 +648,7 @@ export function registerTwilioForwarding(
         logger.warn("Forwarding call outcome could not be saved");
       }
     }
-    if (wasDialAnswered(dialStatus, req.body?.DialBridged, screened)) {
+    if (wasDialAnswered(dialStatus, req.body?.DialBridged, screened) || humanAccepted) {
       // Owner picked up and call ended normally — hang up cleanly.
       twiml.hangup();
       res.type("text/xml").send(twiml.toString());
@@ -661,6 +688,11 @@ export function registerTwilioForwarding(
         const params = new URLSearchParams();
         if (fromNumber) params.set("from", fromNumber);
         if (screened) params.set("confirm", "1");
+        if (screened && req.body?.CallSid) {
+          params.set("attempt", nextTarget.key);
+          params.set("parent", String(req.body.CallSid));
+          params.set("destination", nextTarget.number);
+        }
         numberOpts.url = `${base}/webhooks/voice/whisper${params.toString() ? "?" + params.toString() : ""}`;
       }
       dial.number(numberOpts, nextTarget.number);
@@ -767,7 +799,7 @@ export function registerTwilioForwarding(
     const spokenName = callerName?.replace(/[<>&]/g, " ").slice(0, 60) || null;
     if (req.query?.confirm === "1") {
       const acceptContext = new URLSearchParams();
-      for (const key of ["route", "parent", "destination"] as const) {
+      for (const key of ["route", "parent", "destination", "attempt"] as const) {
         const value = req.query?.[key];
         if (typeof value === "string") acceptContext.set(key, value);
       }
@@ -843,15 +875,18 @@ const settings = await getTwilioSettings();
     // Record the outcome either way, so "answered but never accepted" stops
     // being invisible in the forwarding telemetry.
     if (
-      req.query?.route === "staff" &&
+      (req.query?.route === "staff" || ["primary", "backup1", "backup2", "tracking"].includes(String(req.query?.attempt || ""))) &&
       /^CA[0-9a-f]{32}$/i.test(parentCallSid) &&
       /^CA[0-9a-f]{32}$/i.test(childCallSid) &&
       destinationNumber
     ) {
+      const attemptKey = req.query?.route === "staff"
+        ? "staff"
+        : String(req.query?.attempt) as "primary" | "backup1" | "backup2" | "tracking";
       await saveForwardingOutcome({
         parentCallSid,
         childCallSid,
-        attemptKey: "staff",
+        attemptKey,
         destinationNumber,
         providerStatus: "unknown",
         humanAccepted: accepted,

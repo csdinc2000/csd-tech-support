@@ -214,13 +214,62 @@ test("press-1 screening and acceptance remain signature protected", async t => {
   const screening = await post("anonymous", true, { path: "/webhooks/voice/whisper?confirm=1" });
   const xml = await screening.text();
   assert.match(xml, /<Gather[^>]*numDigits="1"/);
-  assert.match(xml, /Press 1 to accept/);
+  assert.match(xml, /Press any key to take this C S D call/);
   assert.match(xml, /<Hangup\/>/);
   const accept = await post("anonymous", true, { path: "/webhooks/voice/accept", fields: { Digits: "1" } });
   assert.match(await accept.text(), /Connecting your call/);
-  const reject = await post("anonymous", true, { path: "/webhooks/voice/accept", fields: { Digits: "2" } });
+  const reject = await post("anonymous", true, { path: "/webhooks/voice/accept" });
   assert.match(await reject.text(), /<Hangup\/>/);
   assert.equal((await post("anonymous", false, { path: "/webhooks/voice/accept", fields: { Digits: "1" } })).status, 403);
+});
+
+test("a technician's explicit acceptance prevents ringing the next configured number even if Twilio reports unbridged", async t => {
+  const outcomes: any[] = [];
+  const parentCallSid = "CA00000000000000000000000000000001";
+  const childCallSid = "CA00000000000000000000000000000002";
+  const orderedSettings = {
+    ...settings, forwardToNumber: "+19546706084",
+    backupForwardNumber: "+19546706124", backupForwardNumber2: "+19542533135",
+  };
+  const post = await startServer(t, {
+    getTwilioSettings: async () => orderedSettings as any,
+    saveForwardingOutcome: async outcome => { outcomes.push(outcome); },
+    loadForwardingOutcomes: async callSid => outcomes.filter(outcome => outcome.parentCallSid === callSid),
+  });
+
+  const incoming = await post("anonymous");
+  const incomingXml = await incoming.text();
+  assert.match(incomingXml, new RegExp(
+    `voice/whisper\\?from=.*confirm=1&amp;attempt=primary&amp;parent=${parentCallSid}&amp;destination=%2B19546706084`,
+  ));
+
+  const whisper = await post("anonymous", true, {
+    path: `/webhooks/voice/whisper?confirm=1&attempt=primary&parent=${parentCallSid}&destination=%2B19546706084`,
+  });
+  assert.match(await whisper.text(), new RegExp(
+    `voice/accept\\?parent=${parentCallSid}&amp;destination=%2B19546706084&amp;attempt=primary`,
+  ));
+
+  const accepted = await post("anonymous", true, {
+    path: `/webhooks/voice/accept?attempt=primary&parent=${parentCallSid}&destination=%2B19546706084`,
+    fields: { CallSid: childCallSid, Digits: "7" },
+  });
+  assert.match(await accepted.text(), /Connecting your call/);
+  assert.equal(outcomes[0].humanAccepted, true);
+  assert.equal(outcomes[0].attemptKey, "primary");
+
+  const result = await post("anonymous", true, {
+    path: "/webhooks/voice/dial-result?attempt=primary&screened=1&destination=%2B19546706084",
+    fields: {
+      CallSid: parentCallSid,
+      DialCallSid: childCallSid,
+      DialCallStatus: "completed",
+      DialBridged: "false",
+    },
+  });
+  const resultXml = await result.text();
+  assert.match(resultXml, /<Hangup\/>/);
+  assert.ok(!resultXml.includes("+19546706124"), "a backup must not ring after a technician explicitly accepted");
 });
 
 test("dial results persist provider status separately from press-1 human acceptance", async t => {
@@ -274,7 +323,7 @@ test("parallel staff call legs save their own provider status and press-1 accept
     path: `/webhooks/voice/whisper?confirm=1&route=staff&parent=${parentCallSid}&destination=${encodeURIComponent(destinations[0])}`,
   });
   const whisperXml = await whisper.text();
-  assert.match(whisperXml, /Press 1 to accept/);
+  assert.match(whisperXml, /Press any key to take this C S D call/);
   assert.match(whisperXml, /voice\/accept\?route=staff&amp;parent=CA00000000000000000000000000000001&amp;destination=%2B12025550101/);
 
   for (const [destination, childCallSid, providerStatus] of [
