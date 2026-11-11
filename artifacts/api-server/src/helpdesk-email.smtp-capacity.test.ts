@@ -116,3 +116,27 @@ test("a non-capacity SMTP failure is rethrown without raising an alert", async (
   await assert.rejects(sendEmail("x@example.test", "s", "b", { operation: "marketplace" }), /ECONNREFUSED/);
   assert.equal(alerts.length, 0);
 });
+
+test("SMTP mail carries a real From header and envelope sender", async (t) => {
+  withSmtpEnv(t);
+  fakeAlertStore();
+  const nodemailer = (await import("nodemailer")).default;
+  const renderer = nodemailer.createTransport({ streamTransport: true, buffer: true });
+  let rendered: { message: Buffer; envelope: { from: string | false } } | undefined;
+  __setSmtpTransportForTests({
+    async sendMail(message) {
+      rendered = (await renderer.sendMail(message)) as any;
+      return { messageId: "<rendered@example.test>" } as any;
+    },
+  });
+
+  await sendEmail("customer@example.test", "Your repair", "Ready for pickup.", {
+    from: "support@computersystemsdepot.com",
+    fromName: "Computer Systems Depot",
+    operation: "helpdesk",
+  });
+
+  const fromHeader = rendered!.message.toString().split(/\r?\n/).find((line) => /^From:/i.test(line));
+  assert.equal(fromHeader, "From: Computer Systems Depot <support@computersystemsdepot.com>");
+  assert.equal(rendered!.envelope.from, "support@computersystemsdepot.com");
+});

@@ -3,8 +3,14 @@ import { simpleParser, type ParsedMail } from "mailparser";
 import { pool } from "./db";
 import { handleInboundHelpdeskEmail } from "./routes/helpdesk";
 import { logger } from "./lib/logger";
+import { getAppState, setAppState } from "./app-state";
 
 const POLL_MS = 60_000;
+// New mail handled per poll; the rest waits for the next minute.
+const MAX_MESSAGES_PER_POLL = 25;
+// On first start (or a mailbox reset) only unread mail from the last few days
+// is imported, so years of old mail don't become tickets.
+const BACKFILL_DAYS = Number(process.env.CSD_MAIL_BACKFILL_DAYS || 2);
 const MAILBOX_LOCK_KEY = 7_418_203;
 let workerTimer: ReturnType<typeof setInterval> | undefined;
 let processing = false;
@@ -68,6 +74,27 @@ function parsedText(parsed: ParsedMail): string {
   return parsed.text?.trim() || (typeof parsed.html === "string" ? parsed.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "");
 }
 
+/**
+ * Automated mail that must not open tickets: bounces, auto-replies, bulk/list
+ * mail and our own messages. Ticket autoresponders would otherwise reply to
+ * them and loop.
+ */
+export function automatedMailReason(input: {
+  fromEmail: string;
+  mailboxUser: string;
+  headers: Map<string, unknown> | { get(name: string): unknown };
+}): string | null {
+  const from = input.fromEmail.trim().toLowerCase();
+  const header = (name: string) => String(input.headers.get(name) ?? "").toLowerCase();
+  if (from && from === input.mailboxUser.trim().toLowerCase()) return "sent from the support mailbox itself";
+  if (/^(mailer-daemon|postmaster|no-?reply|do-?not-?reply|bounces?)([+@]|$)/.test(from)) return "automated sender";
+  const autoSubmitted = header("auto-submitted");
+  if (autoSubmitted && autoSubmitted !== "no") return "auto-submitted";
+  if (/^(bulk|list|junk|auto_reply)$/.test(header("precedence"))) return "bulk or auto-reply";
+  if (header("x-autoreply") || header("x-autorespond") || header("list-unsubscribe") || header("list-id")) return "auto-reply or mailing list";
+  return null;
+}
+
 async function processMailboxMessage(
   settings: NonNullable<ReturnType<typeof mailboxSettings>>,
   uid: number,
@@ -78,6 +105,7 @@ async function processMailboxMessage(
   const body = parsedText(parsed);
   const subject = parsed.subject?.trim() || "(no subject)";
   if (!sender.email || !body) throw new Error("Inbound email did not contain a sender and body");
+  const skipReason = automatedMailReason({ fromEmail: sender.email, mailboxUser: settings.user, headers: parsed.headers });
 
   const messageId = parsed.messageId?.trim() || null;
   const dedupeKey = messageId ? `message:${messageId}` : `uid:${settings.mailbox}:${uid}`;
@@ -105,6 +133,14 @@ async function processMailboxMessage(
     )).rows[0];
   if (!row) return;
 
+  if (skipReason) {
+    await pool.query(
+      "UPDATE mailbox_received_messages SET status='skipped', error=$2, processed_at=now(), updated_at=now() WHERE id=$1",
+      [row.id, `Not turned into a ticket: ${skipReason}`],
+    );
+    return;
+  }
+
   try {
     const result = await handleInboundHelpdeskEmail({
       from: sender.email,
@@ -126,6 +162,44 @@ async function processMailboxMessage(
     );
     throw error;
   }
+}
+
+type MailboxCursor = { uidValidity: string; lastUid: number };
+
+function cursorKey(settings: NonNullable<ReturnType<typeof mailboxSettings>>): string {
+  return `mailbox-cursor:${settings.host}:${settings.user}:${settings.mailbox}`.toLowerCase();
+}
+
+/**
+ * UIDs to handle this poll. New mail is tracked by UID (not the \Seen flag),
+ * so a message staff already opened in webmail is still picked up, and old
+ * unread mail is never bulk-imported.
+ */
+async function pendingUids(
+  imap: ImapFlow,
+  settings: NonNullable<ReturnType<typeof mailboxSettings>>,
+): Promise<{ uids: number[]; cursor: MailboxCursor }> {
+  const box = imap.mailbox;
+  if (!box) throw new Error("Mailbox is not open");
+  const uidValidity = String(box.uidValidity);
+  const stored = await getAppState<MailboxCursor>(cursorKey(settings));
+  if (stored && stored.uidValidity === uidValidity) {
+    const found = (await imap.search({ uid: `${stored.lastUid + 1}:*` }, { uid: true })) || [];
+    // "N:*" always matches the newest message, even when it is older than N.
+    const uids = found.filter((uid) => uid > stored.lastUid).sort((a, b) => a - b);
+    return { uids, cursor: stored };
+  }
+  // First run or the server reset UIDs: start at the current end of the
+  // mailbox and import only recent unread mail.
+  const since = new Date(Date.now() - BACKFILL_DAYS * 24 * 60 * 60_000);
+  const recentUnread = BACKFILL_DAYS > 0
+    ? ((await imap.search({ seen: false, since }, { uid: true })) || [])
+    : [];
+  const cursor: MailboxCursor = { uidValidity, lastUid: Math.max(0, Number(box.uidNext) - 1) };
+  await setAppState(cursorKey(settings), cursor);
+  logger.info({ mailbox: settings.mailbox, backfill: recentUnread.length }, "Inbound mailbox cursor initialised");
+  // Backfilled UIDs are all below the cursor, so handling them never moves it.
+  return { uids: recentUnread.sort((a, b) => a - b), cursor };
 }
 
 async function pollMailbox(): Promise<number> {
@@ -158,13 +232,26 @@ async function pollMailbox(): Promise<number> {
     await imap.connect();
     const mailboxLock = await imap.getMailboxLock(settings.mailbox);
     try {
-      for await (const message of imap.fetch({ seen: false }, { uid: true, source: true })) {
+      const { uids, cursor } = await pendingUids(imap, settings);
+      const key = cursorKey(settings);
+      // One message at a time: running other IMAP commands inside a fetch()
+      // iterator deadlocks ImapFlow, which stalled this worker before.
+      for (const uid of uids.slice(0, MAX_MESSAGES_PER_POLL)) {
         try {
-          await processMailboxMessage(settings, message.uid, message.source as Buffer);
-          await imap.messageFlagsAdd(message.uid, ["\\Seen"]);
-          processed++;
+          const message = await imap.fetchOne(String(uid), { source: true }, { uid: true });
+          if (message && message.source) {
+            await processMailboxMessage(settings, uid, message.source as Buffer);
+            await imap.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true });
+            processed++;
+          }
         } catch (error) {
-          logger.warn({ error, mailbox: settings.mailbox, uid: message.uid }, "Inbound mailbox message failed");
+          // Recorded as failed in mailbox_received_messages; move on so one
+          // bad message can't block the mailbox.
+          logger.warn({ err: error, mailbox: settings.mailbox, uid }, "Inbound mailbox message failed");
+        }
+        if (uid > cursor.lastUid) {
+          cursor.lastUid = uid;
+          await setAppState(key, cursor);
         }
       }
     } finally {
@@ -182,7 +269,21 @@ async function pollMailbox(): Promise<number> {
   }
 }
 
+// Development and production share the real support mailbox but not a
+// database, so both polling it would import every email twice (and send two
+// autoresponders). Only production polls unless CSD_MAIL_WORKER=on.
+export function mailboxWorkerEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const flag = (env.CSD_MAIL_WORKER || "").trim().toLowerCase();
+  if (flag === "on" || flag === "true" || flag === "1") return true;
+  if (flag === "off" || flag === "false" || flag === "0") return false;
+  return env.NODE_ENV === "production";
+}
+
 export function startMailboxWorker(): void {
+  if (!mailboxWorkerEnabled()) {
+    logger.info("Mailbox IMAP worker off outside production (set CSD_MAIL_WORKER=on to enable)");
+    return;
+  }
   if (workerTimer || !isMailboxConfigured()) {
     if (!isMailboxConfigured()) logger.info("Mailbox IMAP worker disabled: mailbox credentials are not configured");
     return;

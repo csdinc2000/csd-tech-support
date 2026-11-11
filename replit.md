@@ -119,5 +119,6 @@ _Populate as you build — explicit user instructions worth remembering across s
 - The vite dev server has no `/api` proxy — the Replit router forwards `/api` to port 5000. Browser tests that hit the API must `page.route("**/api/**")` to port 5000 or mock it.
 
 ## Pointers
+- Support mailbox (IMAP → helpdesk tickets, `mailbox-service.ts`): runs only in production unless `CSD_MAIL_WORKER=on` (dev and prod share the real mailbox but not a database). It follows a UID cursor in `app_state`, not the unread flag; first start imports only unread mail from the last `CSD_MAIL_BACKFILL_DAYS` (default 2). Bounces, auto-replies, list mail and mail from the mailbox itself are recorded as `skipped` in `mailbox_received_messages`, never ticketed.
 
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details

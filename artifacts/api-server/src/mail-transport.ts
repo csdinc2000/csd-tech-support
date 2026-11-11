@@ -65,7 +65,11 @@ export async function sendSmtpMail(message: OutboundMail): Promise<{ messageId: 
   const info = await getSmtpTransport().sendMail({
     to: message.to,
     bcc: message.bcc,
-    from: message.from,
+    // Callers use SendGrid's { email, name } shape; nodemailer needs
+    // { address, name }. Passing { email } through left mail with no From
+    // header and an empty envelope sender, so recipients rejected or
+    // spam-filtered it.
+    from: { address: message.from.email, name: message.from.name ?? "" },
     replyTo: message.replyTo,
     subject: message.subject,
     text: message.text,
