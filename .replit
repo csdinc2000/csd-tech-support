@@ -1,0 +1,70 @@
+modules = ["nodejs-24", "python-base-3.13", "postgresql-16"]
+hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
+guest_git = true
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "post-merge-regression"
+
+[[workflows.workflow]]
+name = "post-merge-regression"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/scripts run test:post-merge"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[agent]
+stack = "PNPM_WORKSPACE"
+expertMode = true
+integrations = ["javascript_log_in_with_replit:2.0.0", "twilio:1.0.0", "google-calendar:1.0.0", "stripe:1.0.0"]
+
+[userenv]
+
+[userenv.shared]
+ADMIN_EMAILS = "support@computersystemsdepot.com"
+PUBLIC_BASE_URL = "https://support.computersystemsdepot.com"
+APP_BASE_URL = "https://support.computersystemsdepot.com"
+ROIP_ENABLED = "true"
+ROIP_SINGLE_INSTANCE = "true"
+ROIP_SIP_DOMAIN = "csd-roip-gateway.sip.twilio.com"
+ROIP_SIP_USERNAME = "csd-radio-gateway"
+SLACK_CHANNEL_ID = "C019E53QK7E"
+ARIA_MAIL_USER = "support@computersystemsdepot.com"
+ARIA_MAIL_HOST = "mail.computersystemsdepot.com"
+ARIA_MAIL_IMAP_PORT = "993"
+ARIA_MAIL_SMTP_PORT = "465"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 120000
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 5001
+externalPort = 3000
+
+[nix]
+channel = "stable-25_05"

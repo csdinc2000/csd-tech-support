@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "CSD RMM / CRM"
+description = "Computer Systems Depot's existing RMM, CRM, helpdesk, billing, communications, and remote support web application, ported into the multi-artifact workspace without changing its product experience."
+version = "1.0.0"
+id = "artifacts/csd-rmm-crm"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20117
+
+[services.development]
+run = "pnpm --filter @workspace/csd-rmm-crm run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/csd-rmm-crm", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/csd-rmm-crm/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20117"
+BASE_PATH = "/"

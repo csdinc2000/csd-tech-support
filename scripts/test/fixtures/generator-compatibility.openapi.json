@@ -1,0 +1,60 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Compatibility fixture", "version": "1.0.0" },
+  "paths": {
+    "/staff": {
+      "get": {
+        "operationId": "listStaff",
+        "parameters": [
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0 } },
+          { "name": "active", "in": "query", "schema": { "type": "boolean" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff list",
+            "content": { "application/json": { "schema": {
+              "type": "array", "items": { "$ref": "#/components/schemas/Staff" }
+            } } }
+          }
+        }
+      }
+    },
+    "/staff/{id}": {
+      "patch": {
+        "operationId": "updateStaff",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StaffUpdate" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated staff",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Staff" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Staff": {
+        "type": "object",
+        "required": ["id", "name", "role", "lastSeen"],
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string", "minLength": 1 },
+          "role": { "type": "string", "enum": ["owner", "staff"] },
+          "lastSeen": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "StaffUpdate": {
+        "type": "object",
+        "required": ["name"],
+        "properties": { "name": { "type": "string", "minLength": 1 } }
+      }
+    }
+  }
+}

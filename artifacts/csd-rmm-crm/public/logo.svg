@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 72" role="img" aria-label="Computer Systems Depot">
+  <rect width="72" height="72" rx="14" fill="#e60000"/>
+  <path fill="#fff" d="M18 18h36v9H28v18h23v9H28v9h27v9H18z"/>
+  <text x="88" y="45" fill="#171717" font-family="Arial, sans-serif" font-size="25" font-weight="700">CSD Platform</text>
+</svg>
