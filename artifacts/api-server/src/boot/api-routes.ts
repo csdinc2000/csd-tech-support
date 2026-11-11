@@ -16,6 +16,7 @@ import { registerExecutiveAssistantRoutes } from "../executive-assistant";
 import { registerStaffContactProfileRoutes } from "../staff-contact-profile";
 import { registerStaffInviteRoutes } from "../staff-invites";
 import { registerStaffAccountDeletionRoutes } from "../staff-account-deletion";
+import { registerAppPhoneRoutes } from "../app-phone";
 
 export type ApiRouteOptions = Parameters<typeof registerRoutes>[1];
 
@@ -44,5 +45,6 @@ export async function registerApiRoutes(app: Express, options: ApiRouteOptions =
   registerStaffContactProfileRoutes(app, requireStaffAdministrator, { isOwnerEmail: isAdminEmail });
   registerStaffInviteRoutes(app);
   registerStaffAccountDeletionRoutes(app);
+  registerAppPhoneRoutes(app);
   return registerRoutes(app, options);
 }

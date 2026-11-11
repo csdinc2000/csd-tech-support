@@ -39,6 +39,7 @@ import { applyLocalWebsiteIntelligenceMigration } from "../local-website-intelli
 import { applySalesAgentsMigration } from "../migrations/2026-11-10-sales-agents";
 import { applyA2pMonitorStateMigration } from "../migrations/2026-11-11-a2p-monitor-state";
 import { applyPortalAdsMigration } from "../migrations/2026-11-11-portal-ads";
+import { applyStaffVoicePreferencesMigration } from "../migrations/2026-11-11-staff-voice-preferences";
 
 export type Migration = { name: string; apply: () => Promise<unknown> };
 
@@ -90,6 +91,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { name: "sales-agents", apply: applySalesAgentsMigration },
   { name: "a2p-monitor-state", apply: applyA2pMonitorStateMigration },
   { name: "portal-ads", apply: applyPortalAdsMigration },
+  { name: "staff-voice-preferences", apply: applyStaffVoicePreferencesMigration },
 ];
 
 export type MigrationReport = { applied: string[]; failed: string[] };

@@ -24,7 +24,7 @@ let cachedAt = 0;
 // Connector tokens can rotate; refresh from the proxy every 5 minutes.
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-async function getCredentials() {
+export async function getTwilioCredentials() {
   if (cachedSettings && Date.now() - cachedAt < CACHE_TTL_MS) {
     return cachedSettings;
   }
@@ -96,7 +96,7 @@ async function getCredentials() {
 }
 
 export async function getTwilioClient() {
-  const { accountSid, apiKey, apiKeySecret } = await getCredentials();
+  const { accountSid, apiKey, apiKeySecret } = await getTwilioCredentials();
   return twilio(apiKey, apiKeySecret, { accountSid });
 }
 
@@ -125,7 +125,7 @@ export async function listTwilioChildCalls(parentCallSid: string): Promise<Twili
 }
 
 export async function getTwilioFromPhoneNumber(): Promise<string | undefined> {
-  const { phoneNumber } = await getCredentials();
+  const { phoneNumber } = await getTwilioCredentials();
   if (phoneNumber?.trim()) return toE164(phoneNumber);
 
   // Replit's Twilio connection may contain valid credentials without exposing
@@ -180,7 +180,7 @@ export async function listTwilioSmsNumbers(): Promise<
 // Best-effort check that the connector is wired and credentials resolve.
 export async function isTwilioConfigured(): Promise<boolean> {
   try {
-    const c = await getCredentials();
+    const c = await getTwilioCredentials();
     return Boolean(c.accountSid && c.apiKey && c.apiKeySecret);
   } catch {
     return false;

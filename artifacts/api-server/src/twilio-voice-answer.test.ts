@@ -31,6 +31,7 @@ async function startServer(t: TestContext, overrides: Dependencies = {}) {
     getCallFlow: async () => undefined,
     upsertCallLog: async () => ({}) as any,
     getActiveCallRecipientPhones: async () => ["+12025550199"],
+    getAppRingIdentities: async () => [],
     alertTeamOfCall: async () => undefined,
     notifyStaffEvent: async () => undefined,
     sendToVoicemail: async (response, _settings, base) => {
@@ -381,4 +382,30 @@ test("configured forwarding skips invalid, empty and duplicate destinations", ()
   }), [{ key: "primary", number: "+19546706084" }]);
   assert.deepEqual(configuredForwardTargets({ forwardToNumber: "anonymous", backupForwardNumber: "+19546706124" }),
     [{ key: "backup1", number: "+19546706124" }]);
+});
+
+test("staff who answer in the app ring alongside the phones and see who is calling", async t => {
+  const post = await startServer(t, { getAppRingIdentities: async () => ["staff-a", "staff-b"] });
+  const xml = await (await post("+12025550101")).text();
+  assert.match(xml, /<Dial[^>]*>.*<Number[^>]*>\+12025550199<\/Number>.*<\/Dial>/);
+  assert.match(xml, /<Client><Identity>staff-a<\/Identity><Parameter name="caller" value="\+12025550101"\/><Parameter name="line" value="\+19546377300"\/><\/Client>/);
+  assert.match(xml, /<Client><Identity>staff-b<\/Identity>/);
+});
+
+test("with no phones on duty, the app still rings instead of going straight to voicemail", async t => {
+  const post = await startServer(t, {
+    getActiveCallRecipientPhones: async () => [],
+    getAppRingIdentities: async () => ["staff-a"],
+  });
+  const xml = await (await post("+12025550101")).text();
+  assert.match(xml, /<Dial[^>]*><Client><Identity>staff-a<\/Identity>/);
+  assert.doesNotMatch(xml, /<Number/);
+  assert.doesNotMatch(xml, /Leave a message/);
+});
+
+test("an app-ring lookup failure never blocks the call", async t => {
+  const post = await startServer(t, { getAppRingIdentities: async () => { throw new Error("db down"); } });
+  const xml = await (await post("+12025550101")).text();
+  assert.match(xml, /<Number[^>]*>\+12025550199<\/Number>/);
+  assert.doesNotMatch(xml, /<Client>/);
 });

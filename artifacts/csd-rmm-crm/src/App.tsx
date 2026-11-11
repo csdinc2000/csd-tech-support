@@ -42,6 +42,7 @@ import PortalAdPopup from "@/components/portal/portal-ad-popup";
 import NewLeadNotifier from "@/components/notifications/new-lead-notifier";
 import IncomingCallAlerts from "@/components/notifications/incoming-call-alerts";
 import PttRingAlerts from "@/components/ptt/ptt-ring-alerts";
+import AppPhone from "@/components/communications/app-phone";
 import NotFound from "@/pages/not-found";
 import { ShieldAlert } from "lucide-react";
 
@@ -191,6 +192,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         <main className="min-w-0 flex-1">
           <IncomingCallAlerts />
           <PttRingAlerts />
+          <AppPhone />
           <StaffAria />
           {children}
         </main>

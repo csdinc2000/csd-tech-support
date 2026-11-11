@@ -9,6 +9,7 @@ import { authorizeOutboundCallTarget, type OutboundCallContact } from "../outbou
 import { canonicalPublicAppBaseUrl } from "../shared/roip-config";
 import { toValidE164 } from "../phone-validation";
 import { logger } from "../lib/logger";
+import { resolveVoiceTokenConfig, type VoiceTokenConfig } from "../voice-credentials";
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 const voiceStartLimiter = rateLimit({
@@ -43,6 +44,12 @@ export type BrowserVoiceRouteOptions = {
   ): Promise<void>;
   getOutcome?(callId: string): Promise<OutboundCallOutcome | null>;
   env?: NodeJS.ProcessEnv;
+  /**
+   * Token-signing credentials. Defaults to env vars only when `env` is passed
+   * (tests); otherwise env vars, then the Replit Twilio connector and an
+   * auto-created TwiML App (voice-credentials.ts).
+   */
+  resolveVoiceConfig?(outgoingVoiceUrl: string | null): Promise<VoiceTokenConfig | null>;
 };
 
 function publicBaseUrl(env: NodeJS.ProcessEnv): string | null {
@@ -96,12 +103,21 @@ export function verifyBrowserCallGrant(
   }
 }
 
-function configurationMissing(env: NodeJS.ProcessEnv, base: string | null): string[] {
+function envVoiceConfig(env: NodeJS.ProcessEnv): VoiceTokenConfig | null {
+  const accountSid = env.TWILIO_ACCOUNT_SID?.trim();
+  const apiKeySid = env.TWILIO_API_KEY_SID?.trim();
+  const apiKeySecret = env.TWILIO_API_KEY_SECRET?.trim();
+  if (!accountSid || !apiKeySid || !apiKeySecret) return null;
+  return { accountSid, apiKeySid, apiKeySecret, twimlAppSid: env.TWILIO_TWIML_APP_SID?.trim() || null };
+}
+
+function configurationMissing(env: NodeJS.ProcessEnv, base: string | null, voice: VoiceTokenConfig | null): string[] {
+  // Credentials resolved from the connector count as present.
   const required = [
-    ["TWILIO_ACCOUNT_SID", env.TWILIO_ACCOUNT_SID],
-    ["TWILIO_API_KEY_SID", env.TWILIO_API_KEY_SID],
-    ["TWILIO_API_KEY_SECRET", env.TWILIO_API_KEY_SECRET],
-    ["TWILIO_TWIML_APP_SID", env.TWILIO_TWIML_APP_SID],
+    ["TWILIO_ACCOUNT_SID", voice?.accountSid ?? env.TWILIO_ACCOUNT_SID],
+    ["TWILIO_API_KEY_SID", voice?.apiKeySid],
+    ["TWILIO_API_KEY_SECRET", voice?.apiKeySecret],
+    ["TWILIO_TWIML_APP_SID", voice?.twimlAppSid ?? undefined],
     ["TWILIO_AUTH_TOKEN", env.TWILIO_AUTH_TOKEN],
     ["SESSION_SECRET", env.SESSION_SECRET],
   ] as const;
@@ -185,6 +201,9 @@ export function registerBrowserVoiceRoutes(app: Express, options: BrowserVoiceRo
     getOutcome = getOutboundCallOutcome,
     env = process.env,
   } = options;
+  const resolveVoiceConfig = options.resolveVoiceConfig ?? (options.env
+    ? async (): Promise<VoiceTokenConfig | null> => envVoiceConfig(env)
+    : (url: string | null) => resolveVoiceTokenConfig(url, env));
 
   async function authorizeUserTarget(userId: string, to: unknown, contactId?: unknown) {
     const [approved, scope] = await Promise.all([
@@ -224,8 +243,9 @@ export function registerBrowserVoiceRoutes(app: Express, options: BrowserVoiceRo
       }
 
       const base = getPublicBaseUrl();
-      const missing = configurationMissing(env, base);
-      if (missing.length) {
+      const voiceConfig = base ? await resolveVoiceConfig(`${base}/webhooks/voice/browser-connect`) : null;
+      const missing = configurationMissing(env, base, voiceConfig);
+      if (missing.length || !voiceConfig?.twimlAppSid) {
         res.status(503).json({
           error: "Browser calling is not configured yet.",
           missing,
@@ -254,13 +274,13 @@ export function registerBrowserVoiceRoutes(app: Express, options: BrowserVoiceRo
       });
       const AccessToken = twilio.jwt.AccessToken;
       const token = new AccessToken(
-        env.TWILIO_ACCOUNT_SID!,
-        env.TWILIO_API_KEY_SID!,
-        env.TWILIO_API_KEY_SECRET!,
+        voiceConfig.accountSid,
+        voiceConfig.apiKeySid,
+        voiceConfig.apiKeySecret,
         { identity: userId, ttl: 300 },
       );
       token.addGrant(new AccessToken.VoiceGrant({
-        outgoingApplicationSid: env.TWILIO_TWIML_APP_SID!,
+        outgoingApplicationSid: voiceConfig.twimlAppSid,
       }));
       const callGrant = createBrowserCallGrant({
         callId,
