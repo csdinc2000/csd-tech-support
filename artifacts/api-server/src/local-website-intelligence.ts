@@ -11,12 +11,41 @@ import {
 } from "@workspace/api-zod";
 import { pool } from "./db";
 import { getCsdApprovedCatalogService } from "./catalog";
-import { collectTechnologyNames, mapWhatCmsResponse, publicWebsite, validPublicWebsite } from "./local-website-intelligence-core";
+import {
+  collectTechnologyNames,
+  isRetryableOverpassFailure,
+  mapWhatCmsResponse,
+  osmSearchCacheKey,
+  overpassBusinessQuery,
+  publicWebsite,
+  validPublicWebsite,
+} from "./local-website-intelligence-core";
+import { getAppState, setAppState } from "./app-state";
+import { logger } from "./lib/logger";
 import { draftProposal } from "./website-intelligence";
 
 const GOOGLE_PLACES_URL = "https://places.googleapis.com/v1/places:searchText";
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+// Public Overpass servers, tried in order. They are free, shared and often
+// overloaded ("at capacity" 502/504s, timeouts); override with OVERPASS_URLS
+// (comma-separated). Google Places (GOOGLE_PLACES_API_KEY) is the reliable path.
+const OVERPASS_URLS = (process.env.OVERPASS_URLS || [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+].join(","))
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
+// Whole OpenStreetMap search must finish inside proxy request limits. The
+// main server often needs ~40 s when busy, so it gets the most time; mirrors
+// share what's left.
+const OVERPASS_TOTAL_BUDGET_MS = 55_000;
+const OVERPASS_FIRST_ATTEMPT_TIMEOUT_MS = 40_000;
+// Fresh results are reused without asking Overpass; older ones (up to a week)
+// are only served when every server is failing.
+const OSM_CACHE_FRESH_MS = 24 * 60 * 60_000;
+const OSM_CACHE_STALE_MS = 7 * 24 * 60 * 60_000;
 const WHATCMS_URL = "https://whatcms.org/API/Tech";
 const DEFAULT_LOCATION = "Lauderhill, FL";
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -196,27 +225,17 @@ function osmBusiness(element: any): Business | null {
   };
 }
 
-async function searchOpenStreetMap(radiusMiles: number, center: Coordinates): Promise<Business[]> {
-  const radius = Math.round(radiusMiles * MILES_TO_METERS);
-  const query = `[out:json][timeout:20];
-(
-  nwr(around:${radius},${center.lat},${center.lon})["website"]["name"]["craft"="computer_repair"];
-  nwr(around:${radius},${center.lat},${center.lon})["contact:website"]["name"]["craft"="computer_repair"];
-  nwr(around:${radius},${center.lat},${center.lon})["website"]["name"]["shop"~"computer|electronics|mobile_phone"];
-  nwr(around:${radius},${center.lat},${center.lon})["contact:website"]["name"]["shop"~"computer|electronics|mobile_phone"];
-  nwr(around:${radius},${center.lat},${center.lon})["website"]["name"]["office"="it"];
-  nwr(around:${radius},${center.lat},${center.lon})["contact:website"]["name"]["office"="it"];
-);
-out center tags;`;
-  const { data } = await axios.post(OVERPASS_URL, `data=${encodeURIComponent(query)}`, {
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-      "User-Agent": "CSD-WebsiteIntelligence/1.0 (support@computersystemsdepot.com)",
-    },
-    timeout: 30_000,
-    maxRedirects: 0,
-  });
+export class OpenStreetMapUnavailableError extends Error {
+  constructor() {
+    super("All OpenStreetMap (Overpass) servers failed or timed out");
+    this.name = "OpenStreetMapUnavailableError";
+  }
+}
+
+type OsmSearch = { businesses: Business[]; cachedAt: string | null; stale: boolean };
+type OsmCacheEntry = { savedAt: string; businesses: Business[] };
+
+function businessesFromOverpass(data: any): Business[] {
   const seen = new Set<string>();
   return (Array.isArray(data?.elements) ? data.elements : [])
     .map(osmBusiness)
@@ -226,6 +245,66 @@ out center tags;`;
       return true;
     })
     .slice(0, MAX_RESULTS);
+}
+
+async function queryOverpass(query: string): Promise<Business[]> {
+  const deadline = Date.now() + OVERPASS_TOTAL_BUDGET_MS;
+  let lastError: unknown;
+  for (const [index, url] of OVERPASS_URLS.entries()) {
+    const remaining = deadline - Date.now();
+    if (remaining < 3_000) break;
+    try {
+      const { data } = await axios.post(url, `data=${encodeURIComponent(query)}`, {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+          "User-Agent": "CSD-WebsiteIntelligence/1.0 (support@computersystemsdepot.com)",
+        },
+        timeout: index === 0 ? Math.min(OVERPASS_FIRST_ATTEMPT_TIMEOUT_MS, remaining) : remaining,
+        maxRedirects: 0,
+      });
+      if (!Array.isArray(data?.elements)) throw Object.assign(new Error("Overpass returned no JSON elements"), { code: "EBADRESPONSE" });
+      return businessesFromOverpass(data);
+    } catch (error: any) {
+      lastError = error;
+      logger.warn(
+        { server: new URL(url).host, status: error?.response?.status, code: error?.code },
+        "OpenStreetMap search server failed; trying the next one",
+      );
+      if (!isRetryableOverpassFailure(error) && error?.code !== "EBADRESPONSE") break;
+      // Overloaded servers ask for backoff before the next attempt.
+      if (index < OVERPASS_URLS.length - 1) await new Promise((resolve) => setTimeout(resolve, 1_000 * (index + 1)));
+    }
+  }
+  const last = lastError as { code?: string; response?: { status?: number } } | undefined;
+  logger.error({ status: last?.response?.status, code: last?.code }, "Every OpenStreetMap search server failed");
+  throw new OpenStreetMapUnavailableError();
+}
+
+async function searchOpenStreetMap(radiusMiles: number, center: Coordinates): Promise<OsmSearch> {
+  const cacheKey = osmSearchCacheKey(center.lat, center.lon, radiusMiles);
+  const cached = await getAppState<OsmCacheEntry>(cacheKey).catch(() => null);
+  const cachedAge = cached ? Date.now() - Date.parse(cached.savedAt) : Infinity;
+  if (cached && cachedAge < OSM_CACHE_FRESH_MS) {
+    return { businesses: cached.businesses, cachedAt: cached.savedAt, stale: false };
+  }
+  try {
+    const businesses = await queryOverpass(overpassBusinessQuery(center.lat, center.lon, radiusMiles));
+    const entry: OsmCacheEntry = { savedAt: new Date().toISOString(), businesses };
+    await setAppState(cacheKey, entry).catch((error) => logger.warn({ err: error }, "Could not cache OpenStreetMap results"));
+    return { businesses, cachedAt: null, stale: false };
+  } catch (error) {
+    if (cached && cachedAge < OSM_CACHE_STALE_MS) {
+      return { businesses: cached.businesses, cachedAt: cached.savedAt, stale: true };
+    }
+    throw error;
+  }
+}
+
+function googlePlacesConfiguredMessage(): string {
+  return process.env.GOOGLE_PLACES_API_KEY?.trim()
+    ? "Google Places and the free OpenStreetMap servers are both unavailable right now. Please try again in a minute."
+    : "The free OpenStreetMap servers are overloaded right now. Try again in a minute, or add a GOOGLE_PLACES_API_KEY secret for reliable business search.";
 }
 
 function requireUserId(req: Request, res: Response): string | null {
@@ -350,7 +429,14 @@ export function registerLocalWebsiteIntelligenceRoutes(app: Express): void {
       }
       if (businesses.length === 0) {
         source = "openstreetmap";
-        businesses = await searchOpenStreetMap(radiusMiles, center);
+        const osm = await searchOpenStreetMap(radiusMiles, center);
+        businesses = osm.businesses;
+        if (osm.cachedAt) {
+          const when = new Date(osm.cachedAt).toLocaleString("en-US", { timeZone: process.env.BUSINESS_TIMEZONE || "America/New_York" });
+          providerNote = osm.stale
+            ? `OpenStreetMap's servers are busy, so these are the last results saved for this area (${when}).`
+            : `${providerNote} Showing results saved ${when}; OpenStreetMap is checked again after 24 hours.`;
+        }
       }
       await pool.query(
         `DELETE FROM local_business_discovery_results
@@ -393,7 +479,15 @@ export function registerLocalWebsiteIntelligenceRoutes(app: Express): void {
         whatCmsConfigured: Boolean(process.env.WHATCMS_API_KEY?.trim()),
         activeSecurityTestsAvailable: false,
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof OpenStreetMapUnavailableError) {
+        res.setHeader("Retry-After", "60");
+        res.status(503).json({
+          message: googlePlacesConfiguredMessage(),
+        });
+        return;
+      }
+      req.log.error({ err: error }, "Business search failed");
       res.status(502).json({ message: "Business search is temporarily unavailable. Please try again shortly." });
     }
   });
