@@ -140,3 +140,33 @@ test("SMTP mail carries a real From header and envelope sender", async (t) => {
   assert.equal(fromHeader, "From: Computer Systems Depot <support@computersystemsdepot.com>");
   assert.equal(rendered!.envelope.from, "support@computersystemsdepot.com");
 });
+
+test("SMTP From falls back to the mailbox login when the sender is blank or malformed", async (t) => {
+  withSmtpEnv(t);
+  fakeAlertStore();
+  const nodemailer = (await import("nodemailer")).default;
+  const renderer = nodemailer.createTransport({ streamTransport: true, buffer: true });
+  const headers: string[] = [];
+  __setSmtpTransportForTests({
+    async sendMail(message) {
+      const out = (await renderer.sendMail(message)) as any;
+      headers.push(out.message.toString().split(/\r?\n/).find((l: string) => /^From:/i.test(l)) ?? "<none>");
+      return { messageId: "<x@example.test>" } as any;
+    },
+  });
+
+  // Blank sender: buildFrom's default only applies to undefined, so "" reached nodemailer and the From header was dropped.
+  await sendEmail("c@example.test", "s", "b", { from: "", fromName: "CSD" });
+  await sendEmail("c@example.test", "s", "b", { from: "CSD Support <support@computersystemsdepot.com>", fromName: "CSD" });
+  assert.deepEqual(headers, ["From: CSD <relay@example.test>", "From: CSD <support@computersystemsdepot.com>"]);
+});
+
+test("SMTP send refuses to go out without any valid From address", async (t) => {
+  withSmtpEnv(t);
+  fakeAlertStore();
+  process.env.CSD_MAIL_USER = "not-an-address";
+  let sent = false;
+  __setSmtpTransportForTests({ async sendMail() { sent = true; return { messageId: "x" } as any; } });
+  await assert.rejects(sendEmail("c@example.test", "s", "b", { from: "" }), /no valid From address/);
+  assert.equal(sent, false);
+});
