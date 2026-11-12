@@ -61,7 +61,27 @@ function getSmtpTransport(): SmtpSender {
   return smtpTransport;
 }
 
+const PLAIN_ADDRESS = /^[^\s<>@"]+@[^\s<>@"]+\.[^\s<>@"]+$/;
+
+/**
+ * Bare sender address for the From header. Accepts "Name <addr>" strings
+ * (for example from an env var) and falls back to the SMTP login. Nodemailer
+ * silently leaves out the From header when the address is empty or
+ * malformed, and Gmail rejects such mail outright (550 5.7.1 "'From' header
+ * is missing"), so this throws rather than send a headerless message.
+ */
+export function resolveSenderAddress(email: string | undefined | null): string {
+  const candidates = [email, process.env.CSD_SMTP_USER, process.env.CSD_MAIL_USER];
+  for (const candidate of candidates) {
+    const raw = (candidate ?? "").trim();
+    const address = (raw.match(/<([^<>]+)>\s*$/)?.[1] ?? raw).trim();
+    if (PLAIN_ADDRESS.test(address)) return address;
+  }
+  throw new Error("Email not sent: no valid From address is configured");
+}
+
 export async function sendSmtpMail(message: OutboundMail): Promise<{ messageId: string | null }> {
+  const address = resolveSenderAddress(message.from.email);
   const info = await getSmtpTransport().sendMail({
     to: message.to,
     bcc: message.bcc,
@@ -69,7 +89,7 @@ export async function sendSmtpMail(message: OutboundMail): Promise<{ messageId: 
     // { address, name }. Passing { email } through left mail with no From
     // header and an empty envelope sender, so recipients rejected or
     // spam-filtered it.
-    from: { address: message.from.email, name: message.from.name ?? "" },
+    from: { address, name: message.from.name ?? "" },
     replyTo: message.replyTo,
     subject: message.subject,
     text: message.text,
