@@ -1,6 +1,6 @@
 ---
 name: Business-line call answering
-description: The CSD tracking greeting, ordered backups, and technician event-text policy.
+description: The CSD tracking greeting, ordered backups, explicit technician acceptance, and event-text policy.
 ---
 
 The main business line must answer saying exactly "CSD tracking" at all times, including calls from numbers that have never called before and blocked or unknown caller IDs.
@@ -24,6 +24,12 @@ The owner requested the main line ring the primary number, first backup, then se
 **Why:** The user requested two backup destinations and explicitly specified their order, then asked that calls not be ignored or missed. Mobile voicemail must not prevent backup attempts.
 
 **How to apply:** Preserve the caller's greeting, try the configured sequence before CSD voicemail, and require a technician to accept the call. Respect later owner edits rather than resetting settings on every restart.
+
+An explicit technician keypress is canonical acceptance even when Twilio's later dial result reports the child call as unbridged. Persist acceptance against the child call ID and stop the sequential backup chain once accepted.
+
+**Why:** The user reported that the first technician could answer, yet the call disconnected and the next technician rang. Provider bridge status alone did not reliably represent the explicit keypress.
+
+**How to apply:** Carry parent call, child attempt, and destination context through the whisper/accept webhook. Before ringing a backup, consult the saved human-acceptance result as well as Twilio's dial status.
 
 All approved, enabled technicians with text notifications enabled receive intake, incoming-call, ticket, and appointment notices, including off-duty technicians. Missed-call notices prompt follow-up. Broadcast alerts do not grant access to customer records or disclose customer details outside assignment scope.
 
